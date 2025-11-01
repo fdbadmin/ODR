@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Model files (too large for Git)
+*.pth
+*.pt
+*.h5
+*.pkl
+*.ckpt
+
+# Data files (too large for Git)
+*.npy
+*.npz
+*.csv
+*.xlsx
+*.xls
+
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.JPG
+*.JPEG
+*.PNG
+*.webp
+*.gif
+*.bmp
+*.tiff
+
+# ODIR-5K dataset folders
+ODIR-5K/Training Images/
+ODIR-5K/Testing Images/
+Images to Classify/
+preprocessed_data/
+models/
+
+# Results and outputs
+evaluation_results/
+test_predictions.json
+*.json
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# VS Code
+.vscode/
+
+# IDE
+*.swp
+*.swo
+*~
+.idea/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
