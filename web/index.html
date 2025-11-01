@@ -332,6 +332,53 @@
                 <div id="diseaseResults"></div>
             </div>
 
+            <div class="info-box" id="interpretationGuide" style="display: none; background: #fff8e1; border-left: 4px solid #ffc107;">
+                <h3>📋 How to Interpret These Results</h3>
+                <p style="margin-bottom: 15px;"><strong>Understanding the AI Analysis:</strong></p>
+                
+                <div style="margin-bottom: 15px;">
+                    <strong>🎯 Confidence Scores (0-100%):</strong>
+                    <ul style="margin-top: 5px;">
+                        <li><strong>50% or higher = DETECTED</strong> - The AI believes this condition is present</li>
+                        <li><strong>Below 50% = Not Detected</strong> - The AI believes this condition is absent</li>
+                        <li><strong>Higher % = More confident</strong> - 95% is more certain than 55%</li>
+                    </ul>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <strong>🩺 What Each Disease Means:</strong>
+                    <ul style="margin-top: 5px;">
+                        <li><strong>Normal:</strong> No significant abnormalities detected</li>
+                        <li><strong>Diabetic Retinopathy:</strong> Damage to blood vessels in the retina from diabetes</li>
+                        <li><strong>Glaucoma:</strong> Damage to the optic nerve, often from high eye pressure</li>
+                        <li><strong>Cataract:</strong> Clouding of the eye's natural lens</li>
+                        <li><strong>AMD (Age-related Macular Degeneration):</strong> Deterioration of central vision</li>
+                        <li><strong>Hypertensive Retinopathy:</strong> Retinal damage from high blood pressure</li>
+                        <li><strong>Pathological Myopia:</strong> Severe nearsightedness with complications</li>
+                        <li><strong>Other Diseases:</strong> Various abnormalities not fitting the above categories</li>
+                    </ul>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <strong>⚠️ Important Notes:</strong>
+                    <ul style="margin-top: 5px;">
+                        <li><strong>Multiple conditions can coexist</strong> - An eye may have diabetes AND cataracts</li>
+                        <li><strong>96.5% accuracy ≠ 100%</strong> - False positives and negatives can occur</li>
+                        <li><strong>This is a screening tool</strong> - Not a replacement for professional diagnosis</li>
+                        <li><strong>Low scores don't mean zero risk</strong> - A 45% score still warrants attention</li>
+                    </ul>
+                </div>
+
+                <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                    <strong style="color: #c62828;">⚕️ MEDICAL DISCLAIMER:</strong>
+                    <p style="margin-top: 8px; color: #555;">
+                        This AI tool is for <strong>educational and research purposes only</strong>. 
+                        It is NOT a medical device and should NOT be used for clinical diagnosis or treatment decisions. 
+                        Always consult a qualified ophthalmologist or healthcare professional for proper eye examination and diagnosis.
+                    </p>
+                </div>
+            </div>
+
             <div class="info-box">
                 <h3>ℹ️ About This Classifier</h3>
                 <ul>
@@ -375,7 +422,7 @@
         };
 
         // API endpoint - you'll need to set this up
-        const API_URL = 'https://web-production-81bbc.up.railway.app/predict';  // Change this to your deployed API
+        const API_URL = 'http://localhost:5001/predict';  // Change this to your deployed API
 
         // Upload area interactions
         uploadArea.addEventListener('click', () => imageInput.click());
@@ -492,7 +539,9 @@
                 diseaseResults.appendChild(card);
             });
 
+            // Show results and interpretation guide
             results.style.display = 'block';
+            document.getElementById('interpretationGuide').style.display = 'block';
         }
 
         // Demo mode - for GitHub Pages without backend
