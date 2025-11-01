@@ -65,13 +65,14 @@ def load_model():
     """Load the trained model"""
     global model, device
     
-    # Detect device
+    # Detect device (Cloud deployments typically use CPU)
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     elif torch.cuda.is_available():
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
+        print("Note: Running on CPU (normal for cloud deployments)")
     
     print(f"Using device: {device}")
     

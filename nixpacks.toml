@@ -1,0 +1,14 @@
+[phases.setup]
+nixPkgs = ["python39"]
+
+[phases.install]
+cmds = [
+    "pip install --upgrade pip",
+    "pip install --no-cache-dir -r requirements-railway.txt"
+]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "gunicorn api:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1 --threads 2"
