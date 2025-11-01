@@ -38,3 +38,8 @@ tqdm>=4.62.0
 # shap>=0.39.0
 torch>=2.0.0
 torchvision>=0.15.0
+
+# Web API (for deployment)
+flask>=2.3.0
+flask-cors>=4.0.0
+gunicorn>=21.0.0  # For production deployment

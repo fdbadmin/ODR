@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ODIR-5K Ocular Disease Classifier</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 900px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 60px 40px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            background: #f8f9ff;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-subtext {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        #imageInput {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 25px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .preview-container {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .results {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .result-header {
+            background: #f8f9ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .result-header h2 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .result-summary {
+            font-size: 1.2em;
+            color: #333;
+        }
+
+        .disease-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .disease-card:hover {
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transform: translateX(5px);
+        }
+
+        .disease-card.detected {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .disease-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .disease-card.detected .disease-name {
+            color: #667eea;
+        }
+
+        .confidence-bar {
+            background: #e0e0e0;
+            height: 30px;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+            margin-top: 10px;
+        }
+
+        .confidence-fill {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            color: white;
+            font-weight: bold;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .info-box {
+            background: #e8f4f8;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+
+        .info-box h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+            color: #555;
+        }
+
+        .footer {
+            background: #f8f9ff;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .badge-positive {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .badge-negative {
+            background: #e0e0e0;
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+            .content {
+                padding: 20px;
+            }
+            .upload-area {
+                padding: 40px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔬 Ocular Disease Classifier</h1>
+            <p>AI-Powered Fundus Image Analysis</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">ResNet50 Model • 96.5% Accuracy • 8 Disease Categories</p>
+        </div>
+
+        <div class="content">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📷</div>
+                <div class="upload-text">Drop fundus image here or click to upload</div>
+                <div class="upload-subtext">Supports JPG, JPEG, PNG formats</div>
+                <input type="file" id="imageInput" accept="image/jpeg,image/jpg,image/png">
+            </div>
+
+            <div class="preview-container" id="previewContainer">
+                <img id="previewImage" class="preview-image" alt="Preview">
+                <button class="btn" id="analyzeBtn">🔍 Analyze Image</button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Analyzing fundus image...</p>
+                <p style="color: #666; font-size: 0.9em; margin-top: 10px;">Running AI classification model</p>
+            </div>
+
+            <div class="error" id="error"></div>
+
+            <div class="results" id="results">
+                <div class="result-header">
+                    <h2>📊 Classification Results</h2>
+                    <div class="result-summary" id="resultSummary"></div>
+                </div>
+
+                <div id="diseaseResults"></div>
+            </div>
+
+            <div class="info-box">
+                <h3>ℹ️ About This Classifier</h3>
+                <ul>
+                    <li><strong>Model:</strong> ResNet50 with transfer learning</li>
+                    <li><strong>Dataset:</strong> ODIR-5K (3,500 patients, 7,000 images)</li>
+                    <li><strong>Accuracy:</strong> 96.5% validation accuracy</li>
+                    <li><strong>Categories:</strong> Normal, Diabetes, Glaucoma, Cataract, AMD, Hypertension, Myopia, Other abnormalities</li>
+                    <li><strong>Note:</strong> This is for educational/research purposes only. Not for medical diagnosis.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Built with PyTorch and ResNet50 | <a href="https://github.com/fdbadmin/ODR" target="_blank">View on GitHub</a></p>
+            <p style="margin-top: 5px; font-size: 0.85em;">⚠️ For research and educational purposes only. Consult healthcare professionals for medical advice.</p>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const imageInput = document.getElementById('imageInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const error = document.getElementById('error');
+        const resultSummary = document.getElementById('resultSummary');
+        const diseaseResults = document.getElementById('diseaseResults');
+
+        // Disease information
+        const diseaseInfo = {
+            'N': { name: 'Normal', fullName: 'Normal (No Disease)', color: '#4CAF50' },
+            'D': { name: 'Diabetes', fullName: 'Diabetic Retinopathy', color: '#f44336' },
+            'G': { name: 'Glaucoma', fullName: 'Glaucoma', color: '#2196F3' },
+            'C': { name: 'Cataract', fullName: 'Cataract', color: '#FF9800' },
+            'A': { name: 'AMD', fullName: 'Age-related Macular Degeneration', color: '#9C27B0' },
+            'H': { name: 'Hypertension', fullName: 'Hypertensive Retinopathy', color: '#E91E63' },
+            'M': { name: 'Myopia', fullName: 'Pathological Myopia', color: '#00BCD4' },
+            'O': { name: 'Other', fullName: 'Other Diseases/Abnormalities', color: '#607D8B' }
+        };
+
+        // API endpoint - you'll need to set this up
+        const API_URL = 'http://localhost:5001/predict';  // Change this to your deployed API
+
+        // Upload area interactions
+        uploadArea.addEventListener('click', () => imageInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.match('image.*')) {
+                handleImageUpload(file);
+            }
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleImageUpload(file);
+            }
+        });
+
+        function handleImageUpload(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewContainer.style.display = 'block';
+                results.style.display = 'none';
+                error.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        analyzeBtn.addEventListener('click', async () => {
+            const file = imageInput.files[0];
+            if (!file) return;
+
+            // Show loading
+            loading.style.display = 'block';
+            previewContainer.style.display = 'none';
+            results.style.display = 'none';
+            error.style.display = 'none';
+
+            try {
+                // Create form data
+                const formData = new FormData();
+                formData.append('image', file);
+
+                // Call API
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('API request failed');
+                }
+
+                const data = await response.json();
+                displayResults(data);
+            } catch (err) {
+                console.error('Error:', err);
+                error.textContent = '❌ Error: Unable to analyze image. Please make sure the backend API is running. ' + err.message;
+                error.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+                previewContainer.style.display = 'block';
+            }
+        });
+
+        function displayResults(data) {
+            // Display summary
+            const detectedCount = data.detected_diseases.length;
+            if (detectedCount === 0) {
+                resultSummary.innerHTML = '✅ <strong>No diseases detected</strong> - Fundus appears normal';
+            } else {
+                const diseaseNames = data.detected_diseases.map(d => d.name).join(', ');
+                resultSummary.innerHTML = `⚠️ <strong>${detectedCount} condition(s) detected:</strong> ${diseaseNames}`;
+            }
+
+            // Display all disease probabilities
+            diseaseResults.innerHTML = '';
+            const sortedDiseases = Object.entries(data.all_probabilities).sort((a, b) => b[1] - a[1]);
+
+            sortedDiseases.forEach(([diseaseName, probability]) => {
+                const isDetected = probability > 0.5;
+                const diseaseCode = Object.keys(diseaseInfo).find(key => diseaseInfo[key].name === diseaseName || diseaseInfo[key].fullName === diseaseName);
+                const info = diseaseCode ? diseaseInfo[diseaseCode] : { name: diseaseName, fullName: diseaseName };
+
+                const card = document.createElement('div');
+                card.className = `disease-card ${isDetected ? 'detected' : ''}`;
+                
+                card.innerHTML = `
+                    <div class="disease-name">
+                        ${info.fullName}
+                        <span class="badge ${isDetected ? 'badge-positive' : 'badge-negative'}">
+                            ${isDetected ? 'DETECTED' : 'Not Detected'}
+                        </span>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: ${probability * 100}%">
+                            ${(probability * 100).toFixed(1)}%
+                        </div>
+                    </div>
+                `;
+                
+                diseaseResults.appendChild(card);
+            });
+
+            results.style.display = 'block';
+        }
+
+        // Demo mode - for GitHub Pages without backend
+        // Remove this in production with real API
+        if (window.location.hostname === 'fdbadmin.github.io' || window.location.hostname.includes('github.io')) {
+            // Demo mode with simulated results
+            analyzeBtn.addEventListener('click', async (e) => {
+                if (!imageInput.files[0]) return;
+                
+                e.stopImmediatePropagation();
+                
+                loading.style.display = 'block';
+                previewContainer.style.display = 'none';
+                results.style.display = 'none';
+                error.style.display = 'none';
+
+                // Simulate API delay
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Simulated results
+                const demoResults = {
+                    detected_diseases: [
+                        { name: 'Diabetes', probability: 0.946 }
+                    ],
+                    all_probabilities: {
+                        'Diabetic Retinopathy': 0.946,
+                        'Normal': 0.049,
+                        'Other Diseases/Abnormalities': 0.108,
+                        'Hypertensive Retinopathy': 0.049,
+                        'Glaucoma': 0.007,
+                        'Pathological Myopia': 0.004,
+                        'Age-related Macular Degeneration': 0.003,
+                        'Cataract': 0.003
+                    }
+                };
+
+                loading.style.display = 'none';
+                previewContainer.style.display = 'block';
+                displayResults(demoResults);
+
+                // Show demo notice
+                const notice = document.createElement('div');
+                notice.style.cssText = 'background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 10px; margin-top: 20px; color: #856404;';
+                notice.innerHTML = '<strong>📝 Demo Mode:</strong> These are simulated results for demonstration. Deploy the backend API for real predictions.';
+                results.appendChild(notice);
+            }, true);
+        }
+    </script>
+</body>
+</html>
