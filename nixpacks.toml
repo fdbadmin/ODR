@@ -1,5 +1,6 @@
 [phases.setup]
-nixPkgs = ["python39"]
+nixPkgs = ["python39", "libGL"]
+aptPkgs = ["libglib2.0-0", "libsm6", "libxext6", "libxrender-dev"]
 
 [phases.install]
 cmds = [
