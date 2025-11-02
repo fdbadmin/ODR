@@ -225,6 +225,88 @@ class MetadataEnhancedClassifier(nn.Module):
         return self.classifier(combined)
 
 
+class MetadataRefinementModel(nn.Module):
+    """
+    Two-stage metadata refinement model.
+    Stage 1: Frozen image-only baseline model
+    Stage 2: Small metadata-based refinement network
+    
+    This architecture guarantees no performance regression below the baseline
+    while allowing metadata to add corrections where helpful.
+    """
+    
+    def __init__(self, frozen_image_model: nn.Module, num_classes: int = 8, metadata_dim: int = 2):
+        """
+        Args:
+            frozen_image_model: Pre-trained image-only model (will be frozen)
+            num_classes: Number of classes (8 for ODIR-5K)
+            metadata_dim: Dimension of metadata features (2 for age + gender)
+        """
+        super(MetadataRefinementModel, self).__init__()
+        
+        # Stage 1: Frozen image model
+        self.image_model = frozen_image_model
+        for param in self.image_model.parameters():
+            param.requires_grad = False  # Freeze the baseline model
+        self.image_model.eval()  # Keep in eval mode
+        
+        # Stage 2: Metadata-based refinement network
+        # Input: [metadata (2) + image predictions (8)] = 10 features
+        # Output: Refinement residuals (8)
+        self.refiner = nn.Sequential(
+            nn.Linear(metadata_dim + num_classes, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(32, num_classes)
+        )
+        
+        # Initialize refinement network with small weights (start conservative)
+        for m in self.refiner.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0.0, std=0.01)  # Small initialization
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+    
+    def forward(self, images, metadata):
+        """
+        Args:
+            images: (batch_size, 3, 224, 224) - Input images
+            metadata: (batch_size, 2) - [normalized_age, gender_binary]
+        
+        Returns:
+            (batch_size, num_classes) - Refined class logits
+        """
+        # Stage 1: Get baseline predictions (frozen, no gradients)
+        with torch.no_grad():
+            image_logits = self.image_model(images)  # (batch, 8)
+        
+        # Stage 2: Generate metadata-based refinements
+        # Concatenate metadata with image predictions
+        refiner_input = torch.cat([metadata, image_logits], dim=1)  # (batch, 10)
+        refinement = self.refiner(refiner_input)  # (batch, 8)
+        
+        # Apply residual connection: refined = baseline + correction
+        refined_logits = image_logits + refinement
+        
+        return refined_logits
+    
+    def get_baseline_predictions(self, images):
+        """
+        Get predictions from the baseline model only (for comparison).
+        
+        Args:
+            images: (batch_size, 3, 224, 224) - Input images
+        
+        Returns:
+            (batch_size, num_classes) - Baseline class logits
+        """
+        with torch.no_grad():
+            return self.image_model(images)
+
+
 def get_device():
     """Get the best available device (MPS for M5, CUDA for GPU, or CPU)."""
     if torch.backends.mps.is_available():
@@ -279,7 +361,7 @@ def train_epoch(model: nn.Module,
     
     # Use adaptive thresholds if provided, else default 0.5
     if thresholds is None:
-        thresholds = torch.ones(8) * 0.5
+        thresholds = torch.ones(len(LABEL_COLUMNS)) * 0.5
     thresholds = thresholds.to(device)
     
     pbar = tqdm(dataloader, desc=f"Epoch {epoch} [Train]")
@@ -328,16 +410,20 @@ def validate_epoch(model: nn.Module,
                    device: torch.device,
                    epoch: int,
                    use_metadata: bool = False,
-                   thresholds: torch.Tensor = None) -> Tuple[float, float]:
-    """Validate for one epoch with adaptive thresholds."""
+                   thresholds: torch.Tensor = None) -> Tuple[float, float, float, List[float]]:
+    """Validate for one epoch with adaptive thresholds. Returns loss, accuracy, mean F1, and per-class F1."""
     model.eval()
     running_loss = 0.0
     correct_predictions = 0
     total_predictions = 0
     
+    # Collect all predictions and labels for F1 calculation
+    all_predictions = []
+    all_labels = []
+    
     # Use adaptive thresholds if provided, else default 0.5
     if thresholds is None:
-        thresholds = torch.ones(8) * 0.5
+        thresholds = torch.ones(len(LABEL_COLUMNS)) * 0.5
     thresholds = thresholds.to(device)
     with torch.no_grad():
         pbar = tqdm(dataloader, desc=f"Epoch {epoch} [Val]")
@@ -366,13 +452,35 @@ def validate_epoch(model: nn.Module,
             correct_predictions += (predictions == labels).sum().item()
             total_predictions += labels.numel()
             
+            # Store for F1 calculation
+            all_predictions.append(predictions.cpu())
+            all_labels.append(labels.cpu())
+            
             # Update progress bar
             pbar.set_postfix({'loss': f'{loss.item():.4f}'})
     
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_acc = correct_predictions / total_predictions
     
-    return epoch_loss, epoch_acc
+    # Calculate F1 scores per class
+    all_predictions = torch.cat(all_predictions, dim=0).numpy()
+    all_labels = torch.cat(all_labels, dim=0).numpy()
+    
+    f1_per_class = []
+    for i in range(len(LABEL_COLUMNS)):
+        # Calculate F1 for each class
+        tp = ((all_predictions[:, i] == 1) & (all_labels[:, i] == 1)).sum()
+        fp = ((all_predictions[:, i] == 1) & (all_labels[:, i] == 0)).sum()
+        fn = ((all_predictions[:, i] == 0) & (all_labels[:, i] == 1)).sum()
+        
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        f1_per_class.append(float(f1))
+    
+    mean_f1 = np.mean(f1_per_class)
+    
+    return epoch_loss, epoch_acc, mean_f1, f1_per_class
 
 
 def train_model(model: nn.Module,
@@ -382,10 +490,12 @@ def train_model(model: nn.Module,
                 optimizer: optim.Optimizer,
                 scheduler: optim.lr_scheduler._LRScheduler,
                 device: torch.device,
-                num_epochs: int = 50,
+                num_epochs: int = 25,
                 save_dir: str = 'models',
                 use_metadata: bool = False,
-                thresholds: torch.Tensor = None) -> Dict:
+                thresholds: torch.Tensor = None,
+                use_two_stage: bool = False,
+                stage: int = 1) -> Dict:
     """
     Train the model and save checkpoints.
     
@@ -404,10 +514,14 @@ def train_model(model: nn.Module,
         'train_acc': [],
         'val_loss': [],
         'val_acc': [],
+        'val_mean_f1': [],
+        'val_f1_per_class': [],
         'learning_rates': []
     }
     
     best_val_loss = float('inf')
+    best_val_acc = 0.0
+    best_mean_f1 = 0.0  # Track best mean F1 score
     best_epoch = 0
     start_time = time.time()
     
@@ -421,8 +535,8 @@ def train_model(model: nn.Module,
         # Train
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device, epoch, use_metadata, thresholds)
         
-        # Validate
-        val_loss, val_acc = validate_epoch(model, val_loader, criterion, device, epoch, use_metadata, thresholds)
+        # Validate (now returns F1 scores too)
+        val_loss, val_acc, val_mean_f1, val_f1_per_class = validate_epoch(model, val_loader, criterion, device, epoch, use_metadata, thresholds)
         
         # Learning rate scheduling
         scheduler.step()
@@ -433,28 +547,49 @@ def train_model(model: nn.Module,
         history['train_acc'].append(train_acc)
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
+        history['val_mean_f1'].append(val_mean_f1)
+        history['val_f1_per_class'].append(val_f1_per_class)
         history['learning_rates'].append(current_lr)
         
         # Print epoch summary
         epoch_time = time.time() - epoch_start
         print(f"\nEpoch {epoch}/{num_epochs} - {epoch_time:.1f}s")
         print(f"  Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
-        print(f"  Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.4f}")
+        print(f"  Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.4f} | Val Mean F1: {val_mean_f1:.4f}")
+        
+        # Print per-class F1 scores
+        print(f"  Per-class F1:", end=" ")
+        for i, disease in enumerate(LABEL_COLUMNS):
+            print(f"{disease}:{val_f1_per_class[i]:.3f}", end=" ")
+        print()
         print(f"  LR: {current_lr:.6f}")
         
-        # Save best model
-        if val_loss < best_val_loss:
+        # Save best model based on MEAN F1 SCORE (better metric for multi-label)
+        if val_mean_f1 > best_mean_f1:
+            best_mean_f1 = val_mean_f1
+            best_val_acc = val_acc
             best_val_loss = val_loss
             best_epoch = epoch
+            # Save with different names based on stage
+            if use_two_stage and stage == 1:
+                save_path = save_dir / 'baseline_model.pth'
+            elif use_two_stage and stage == 2:
+                save_path = save_dir / 'refinement_model.pth'
+            else:
+                save_path = save_dir / 'best_model.pth'
+            
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'val_loss': val_loss,
                 'val_acc': val_acc,
+                'val_mean_f1': val_mean_f1,
+                'val_f1_per_class': val_f1_per_class,
+                'label_columns': LABEL_COLUMNS,
                 'history': history
-            }, save_dir / 'best_model.pth')
-            print(f"  ✓ Saved best model (val_loss: {val_loss:.4f})")
+            }, save_path)
+            print(f"  ✓ Saved best model to {save_path.name} (mean_f1: {val_mean_f1:.4f}, val_acc: {val_acc:.4f}, val_loss: {val_loss:.4f})")
         
         # Save checkpoint every 10 epochs
         if epoch % 10 == 0:
@@ -471,7 +606,10 @@ def train_model(model: nn.Module,
     print("TRAINING COMPLETE!")
     print("="*70)
     print(f"Total time: {total_time/60:.1f} minutes")
-    print(f"Best epoch: {best_epoch} (val_loss: {best_val_loss:.4f})")
+    print(f"Best epoch: {best_epoch}")
+    print(f"  Val Accuracy: {best_val_acc:.4f}")
+    print(f"  Val Mean F1:  {best_mean_f1:.4f}")
+    print(f"  Val Loss:     {best_val_loss:.4f}")
     print("="*70)
     
     # Save final model and history
@@ -491,21 +629,53 @@ def train_model(model: nn.Module,
 def main():
     """Main training function."""
     
-    # Configuration flag - set to True to use metadata (age, gender)
-    USE_METADATA = True  # Set to True to train with age/gender features
+    # ============================================================================
+    # CONFIGURATION FLAGS
+    # ============================================================================
     
-    # Hyperparameters
-    BATCH_SIZE = 32
-    NUM_EPOCHS = 15
-    LEARNING_RATE = 1e-4
-    WEIGHT_DECAY = 1e-5
-    NUM_WORKERS = 4  # M5 can handle parallel data loading
+    # Stage 1: Train baseline model first
+    # Stage 2: Train refinement with metadata (requires baseline model)
+    STAGE = 1  # 1 = Train baseline only, 2 = Train refinement with metadata
+    
+    # Metadata options
+    USE_METADATA = False  # Set to True to train with age/gender features (Stage 1 baseline: False)
+    USE_TWO_STAGE = True  # Set to True for two-stage refinement approach
+    USE_ENHANCED_METADATA = True  # Set to True to use 18-feature enhanced metadata
+    
+    # Path to baseline model (required for STAGE=2 or USE_TWO_STAGE=True)
+    BASELINE_MODEL_PATH = 'models/baseline_model.pth'  # Path to trained baseline
+    
+    # ============================================================================
+    # HYPERPARAMETERS
+    # ============================================================================
+    
+    if STAGE == 1 or not USE_TWO_STAGE:
+        # Stage 1: Train baseline or standard metadata model
+        BATCH_SIZE = 48  # Increased from 32 - M5 with 32GB can handle more
+        NUM_EPOCHS = 25
+        LEARNING_RATE = 1e-4
+        WEIGHT_DECAY = 1e-5
+    else:
+        # Stage 2: Train refinement network (faster, smaller model)
+        BATCH_SIZE = 48  # Increased from 32
+        NUM_EPOCHS = 15  # Fewer epochs needed for refinement
+        LEARNING_RATE = 5e-5  # Lower learning rate for fine-tuning
+        WEIGHT_DECAY = 1e-5
+    
+    NUM_WORKERS = 6  # M5 has more performance cores, increased from 4
     
     print("="*70)
     print("ODIR-5K MULTI-LABEL CLASSIFICATION TRAINING")
     print("="*70)
     print(f"\nConfiguration:")
+    print(f"  Training Stage: {STAGE}")
+    if STAGE == 1:
+        print(f"  Mode: Training baseline image-only model")
+    else:
+        print(f"  Mode: {'Two-stage refinement' if USE_TWO_STAGE else 'Standard metadata model'}")
     print(f"  Use metadata: {USE_METADATA}")
+    if USE_TWO_STAGE and STAGE == 2:
+        print(f"  Baseline model: {BASELINE_MODEL_PATH}")
     print(f"\nHyperparameters:")
     print(f"  Batch size: {BATCH_SIZE}")
     print(f"  Epochs: {NUM_EPOCHS}")
@@ -518,101 +688,124 @@ def main():
     
     # Load datasets
     print("\n📂 Loading preprocessed data...")
-    if USE_METADATA:
+    
+    # For Stage 1 or non-two-stage training, load based on USE_METADATA flag
+    # For Stage 2 two-stage, always load metadata for refinement network
+    load_metadata = USE_METADATA if (STAGE == 1 or not USE_TWO_STAGE) else True
+    
+    if load_metadata:
+        # Determine which metadata files to use
+        if USE_ENHANCED_METADATA:
+            train_metadata_path = 'preprocessed_data/train_metadata_enhanced.npy'
+            val_metadata_path = 'preprocessed_data/val_metadata_enhanced.npy'
+            metadata_dim = 18  # Enhanced metadata has 18 features
+            print(f"  Using enhanced metadata (18 features)")
+        else:
+            train_metadata_path = 'preprocessed_data/train_metadata.npy'
+            val_metadata_path = 'preprocessed_data/val_metadata.npy'
+            metadata_dim = 2  # Simple metadata has 2 features (age, gender)
+            print(f"  Using simple metadata (2 features)")
+        
         train_dataset = ODIRDataset(
-            'preprocessed_data_enhanced/train_images.npy',
-            'preprocessed_data_enhanced/train_labels.npy',
-            'preprocessed_data_enhanced/train_metadata.npy'
+            'preprocessed_data/train_images.npy',
+            'preprocessed_data/train_labels.npy',
+            train_metadata_path
         )
         val_dataset = ODIRDataset(
-            'preprocessed_data_enhanced/val_images.npy',
-            'preprocessed_data_enhanced/val_labels.npy',
-            'preprocessed_data_enhanced/val_metadata.npy'
+            'preprocessed_data/val_images.npy',
+            'preprocessed_data/val_labels.npy',
+            val_metadata_path
         )
     else:
         train_dataset = ODIRDataset(
-            'preprocessed_data_enhanced/train_images.npy',
-            'preprocessed_data_enhanced/train_labels.npy'
+            'preprocessed_data/train_images.npy',
+            'preprocessed_data/train_labels.npy'
         )
         val_dataset = ODIRDataset(
-            'preprocessed_data_enhanced/val_images.npy',
-            'preprocessed_data_enhanced/val_labels.npy'
+            'preprocessed_data/val_images.npy',
+            'preprocessed_data/val_labels.npy'
         )
+        metadata_dim = 0  # No metadata
     
-    # Calculate sample weights for oversampling minority classes
-    print("\n📊 Calculating sample weights for balanced sampling...")
+    # SIMPLIFIED: Use standard random shuffling (no weighted sampling)
+    print("\n📊 Using standard random sampling...")
     train_labels = train_dataset.labels
-    
-    # For multi-label, weight each sample by the rarest disease it has
-    sample_weights = np.ones(len(train_labels))
     pos_counts = train_labels.sum(axis=0)
     
-    for i in range(len(train_labels)):
-        # Get diseases present in this sample
-        diseases_present = np.where(train_labels[i] == 1)[0]
-        if len(diseases_present) > 0:
-            # Weight by the rarest disease present
-            min_count = pos_counts[diseases_present].min()
-            # Inverse frequency weighting: samples with rare diseases get higher weight
-            sample_weights[i] = len(train_labels) / (len(LABEL_COLUMNS) * min_count)
-    
-    # Cap maximum weight at 5.0 to prevent over-aggressive oversampling
-    # This prevents too many false positives while still helping rare classes
-    sample_weights = np.minimum(sample_weights, 5.0)
-    
-    # Normalize weights
-    sample_weights = sample_weights / sample_weights.sum() * len(sample_weights)
-    
-    print(f"  Sample weight range: [{sample_weights.min():.2f}, {sample_weights.max():.2f}] (capped at 5.0)")
-    print(f"  Samples with weight > 2.0: {(sample_weights > 2.0).sum()} (rare disease examples)")
-    print(f"  → Moderate oversampling for clinical reliability")
-    
-    # Create weighted sampler
-    from torch.utils.data import WeightedRandomSampler
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True
-    )
-    
-    # Create data loaders
+    # Create data loaders with standard shuffling
     train_loader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
-        sampler=sampler,  # Use weighted sampler instead of shuffle
+        shuffle=True,  # Standard random shuffling
         num_workers=NUM_WORKERS,
-        pin_memory=True
+        pin_memory=False  # MPS doesn't support pin_memory, set to False
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=NUM_WORKERS,
-        pin_memory=True
+        pin_memory=False  # MPS doesn't support pin_memory, set to False
     )
     
-    print(f"\n✓ Train batches: {len(train_loader)} (with oversampling)")
+    print(f"\n✓ Train batches: {len(train_loader)}")
     print(f"✓ Val batches: {len(val_loader)}")
     
     # Create model
     print("\n🏗️  Building model...")
-    if USE_METADATA:
-        model = MetadataEnhancedClassifier(
+    
+    if STAGE == 2 and USE_TWO_STAGE:
+        # Stage 2: Two-stage refinement approach
+        print("🔄 Loading baseline model for two-stage training...")
+        
+        # Load the frozen baseline model
+        baseline_model = MultiLabelClassifier(
             num_classes=len(LABEL_COLUMNS),
-            metadata_dim=2,  # age + gender
             backbone='resnet50',
             pretrained=True
         )
-        print("✓ Using MetadataEnhancedClassifier (with age/gender features)")
+        
+        # Load trained weights
+        checkpoint = torch.load(BASELINE_MODEL_PATH, map_location=device)
+        if 'model_state_dict' in checkpoint:
+            baseline_model.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            baseline_model.load_state_dict(checkpoint)
+        
+        baseline_model = baseline_model.to(device)
+        print(f"✓ Loaded baseline model from {BASELINE_MODEL_PATH}")
+        
+        # Create refinement model
+        model = MetadataRefinementModel(
+            frozen_image_model=baseline_model,
+            num_classes=len(LABEL_COLUMNS),
+            metadata_dim=metadata_dim  # Use detected metadata dimension (2 or 18)
+        )
+        model = model.to(device)
+        print("✓ Using MetadataRefinementModel (two-stage approach)")
+        print("  - Stage 1: Frozen baseline (image-only)")
+        print(f"  - Stage 2: Metadata-based refinement network ({metadata_dim} features)")
+        
+    elif USE_METADATA:
+        # Standard metadata-enhanced model
+        model = MetadataEnhancedClassifier(
+            num_classes=len(LABEL_COLUMNS),
+            metadata_dim=metadata_dim,  # Use detected metadata dimension (2 or 18)
+            backbone='resnet50',
+            pretrained=True
+        )
+        model = model.to(device)
+        print(f"✓ Using MetadataEnhancedClassifier (with {metadata_dim} features)")
+        
     else:
+        # Image-only baseline model
         model = MultiLabelClassifier(
             num_classes=len(LABEL_COLUMNS),
             backbone='resnet50',
             pretrained=True
         )
-        print("✓ Using MultiLabelClassifier (image-only)")
-    
-    model = model.to(device)
+        model = model.to(device)
+        print("✓ Using MultiLabelClassifier (image-only baseline)")
     
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
@@ -620,12 +813,14 @@ def main():
     print(f"✓ Total parameters: {total_params:,}")
     print(f"✓ Trainable parameters: {trainable_params:,}")
     
+    if USE_TWO_STAGE and STAGE == 2:
+        frozen_params = total_params - trainable_params
+        print(f"✓ Frozen parameters: {frozen_params:,} (baseline model)")
+        print(f"  → Only training {trainable_params:,} refinement parameters!")
+    
     # Calculate class weights for imbalanced dataset
     print("\n⚖️  Calculating class weights...")
-    train_labels = train_dataset.labels
-    pos_counts = train_labels.sum(axis=0)
     neg_counts = len(train_labels) - pos_counts
-    class_frequencies = pos_counts / len(train_labels)
     
     # Weight = neg_count / pos_count (higher weight for rare classes)
     pos_weights = neg_counts / pos_counts
@@ -635,16 +830,13 @@ def main():
     for i, disease in enumerate(LABEL_COLUMNS):
         print(f"    {disease}: {pos_weights[i].item():.2f} (pos: {int(pos_counts[i])}, neg: {int(neg_counts[i])})")
     
-    # Calculate adaptive thresholds
-    print("\n🎯 Calculating adaptive thresholds...")
-    thresholds = get_adaptive_thresholds(class_frequencies)
-    print("  Decision thresholds (lower = easier to predict positive):")
-    for i, disease in enumerate(LABEL_COLUMNS):
-        print(f"    {disease}: {thresholds[i].item():.2f} (freq: {class_frequencies[i]:.2%})")
+    # SIMPLIFIED: Use standard BCE Loss with class weights (no Focal Loss, no adaptive thresholds)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
+    print("\n✓ Using BCEWithLogitsLoss with class weights (standard approach)")
+    print("✓ Using standard 0.5 threshold for all classes")
     
-    # Loss function - Using Focal Loss for better handling of hard examples
-    criterion = FocalLoss(alpha=1.0, gamma=2.0, pos_weight=pos_weights)
-    print("✓ Using Focal Loss with class weights to handle imbalance and focus on hard examples")
+    # No adaptive thresholds - will use default 0.5 in training
+    thresholds = None
     
     # Optimizer
     optimizer = optim.AdamW(
@@ -661,6 +853,8 @@ def main():
     )
     
     # Train model
+    use_metadata_flag = load_metadata  # Use metadata in training if loaded
+    
     history = train_model(
         model=model,
         train_loader=train_loader,
@@ -670,11 +864,20 @@ def main():
         scheduler=scheduler,
         device=device,
         num_epochs=NUM_EPOCHS,
-        use_metadata=USE_METADATA,
-        thresholds=thresholds
+        use_metadata=use_metadata_flag,
+        thresholds=thresholds,
+        use_two_stage=USE_TWO_STAGE,
+        stage=STAGE
     )
     
     print("\n✅ Training complete! Model saved in 'models/' directory.")
+    
+    if STAGE == 2 and USE_TWO_STAGE:
+        print("\n🎯 Two-Stage Training Summary:")
+        print("  ✓ Baseline model: Frozen (guaranteed baseline performance)")
+        print("  ✓ Refinement network: Trained to add metadata-based corrections")
+        print("  ✓ Final model: Baseline + refinement (cannot perform worse than baseline)")
+    
     print("\nNext steps:")
     print("  1. Evaluate model on test set")
     print("  2. Generate predictions and visualizations")

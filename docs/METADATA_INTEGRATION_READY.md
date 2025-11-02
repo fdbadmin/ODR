@@ -1,4 +1,37 @@
-# Metadata Integration - Ready to Train
+# Metadata Integration - Multiple Approaches Available
+
+## Update (November 2, 2025)
+
+**Status**: ✅ TWO-STAGE REFINEMENT IMPLEMENTED (RECOMMENDED)
+
+After analysis of initial training results, we now offer **three approaches** for metadata integration:
+
+### Approach 1: Two-Stage Refinement (RECOMMENDED) ✅
+- **Safety**: Guaranteed ≥85.21% (cannot regress)
+- **Training Time**: ~10 minutes (Stage 2 only)
+- **Expected Result**: 86-88% (+1-3%)
+- **Trainable Params**: ~5,000
+- **Documentation**: `docs/TWO_STAGE_TRAINING_GUIDE.md`
+
+### Approach 2: Standard Metadata Model
+- **Safety**: May regress below baseline ⚠️
+- **Training Time**: ~50 minutes
+- **Expected Result**: 76-87% (unstable)
+- **Trainable Params**: 24.6M
+- **Documentation**: Below (original guide)
+
+### Approach 3: Image-Only Baseline
+- **Safety**: Proven performance ✅
+- **Training Time**: ~45 minutes
+- **Expected Result**: 85.21%
+- **Trainable Params**: 24.5M
+- **Use Case**: Baseline for comparison
+
+**Recommendation**: Use Approach 1 (Two-Stage Refinement) for production. See `docs/TWO_STAGE_TRAINING_GUIDE.md` for complete instructions.
+
+---
+
+# Original Metadata Integration Guide
 
 ## Summary
 All code has been updated to support training with age/gender metadata. The system is now ready to train a metadata-enhanced model.

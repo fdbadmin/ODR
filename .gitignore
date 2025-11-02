@@ -50,7 +50,11 @@ models/
 evaluation_results/
 outputs/
 test_predictions.json
-*.json
+
+# But keep project documentation JSON files
+!HYPERTENSION_REMOVAL_REPORT.json
+!package.json
+!requirements.json
 
 # macOS
 .DS_Store

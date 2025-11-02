@@ -25,13 +25,14 @@ DISEASE_LABELS = {
     'G': 'Glaucoma',
     'C': 'Cataract',
     'A': 'Age-related Macular Degeneration',
-    'H': 'Hypertension',
     'M': 'Pathological Myopia',
     'O': 'Other diseases/abnormalities'
 }
 
+# Note: Hypertension (H) removed - not reliably detectable from fundus images alone
+
 # Label columns in order
-LABEL_COLUMNS = ['N', 'D', 'G', 'C', 'A', 'H', 'M', 'O']
+LABEL_COLUMNS = ['N', 'D', 'G', 'C', 'A', 'M', 'O']  # H removed
 
 # Image properties
 IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png']
@@ -40,7 +41,7 @@ DEFAULT_IMAGE_SIZE = (224, 224)  # For preprocessing
 # Model hyperparameters (example)
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
-NUM_EPOCHS = 50
+NUM_EPOCHS = 25  # Updated from 50 to 25 for faster training cycles
 TRAIN_TEST_SPLIT = 0.8
 
 # Random seed for reproducibility
@@ -53,7 +54,6 @@ DISEASE_COLORS = {
     'G': '#3498db',  # Blue
     'C': '#f39c12',  # Orange
     'A': '#9b59b6',  # Purple
-    'H': '#e67e22',  # Dark orange
     'M': '#1abc9c',  # Turquoise
     'O': '#95a5a6'   # Gray
 }

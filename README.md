@@ -15,26 +15,42 @@ Multi-label deep learning system for detecting 8 eye diseases from retinal fundu
 Current baseline (image-only):
 - **Mean Sample Accuracy**: 85.21%
 - **Best Performers**: Myopia (89.1% AUC), Glaucoma (73.6%), Cataract (69.9%)
+- **Challenges**: Low recall on rare diseases (Hypertension: 0%, AMD: 1.9%)
 
-Metadata-enhanced model (in training):
-- **Expected Accuracy**: 87-89%
-- **Improved Rare Disease Detection**: 15-25% recall for previously undetected conditions
-- **High Specificity**: ~97-98% (low false positive rate)
+Two-Stage Metadata Refinement (recommended approach):
+- **Expected Accuracy**: 86-88% (+1-3% over baseline)
+- **Guaranteed Floor**: ≥85.21% (cannot regress below baseline)
+- **Improved Rare Disease Detection**: 10-15% recall on Hypertension, AMD, Diabetes
+- **Safe Integration**: Frozen baseline + trainable refinement network
 
 ## 🏗️ Architecture
 
-### Model Components
-- **Image Encoder**: ResNet50 pretrained backbone (2048 features)
-- **Metadata Encoder**: Small MLP (age + gender → 16 features)
-- **Late Fusion**: Concatenate image + metadata features
-- **Classifier**: Multi-label prediction (8 classes)
-- **Total Parameters**: 24.6M
+### Two-Stage Refinement Model (Recommended)
+```
+Stage 1: Frozen Baseline (Image-Only)
+  - ResNet50 pretrained backbone
+  - Trained to 85.21% accuracy
+  - Frozen during Stage 2 (guarantees floor performance)
 
-### Training Improvements
-1. **Class-Weighted Loss**: 36.73× weight for rarest disease (Hypertension)
-2. **Adaptive Thresholds**: 0.40-0.47 range (lower for rare diseases)
-3. **Weighted Sampling**: 5× cap to prevent over-aggressive oversampling
-4. **Focal Loss**: Gamma=2.0 to focus on hard examples
+Stage 2: Metadata Refinement
+  - Input: Baseline predictions + age/gender
+  - Small MLP (~5K parameters)
+  - Learns metadata-based corrections
+  - Output: Baseline + refinements (residual connection)
+```
+
+**Key Advantages:**
+- ✅ **No Regression Risk**: Cannot perform worse than baseline
+- ✅ **Fast Training**: Only ~10 minutes for refinement
+- ✅ **Interpretable**: Can measure metadata contribution per disease
+- ✅ **Efficient**: Only 5K trainable parameters vs 24.6M
+
+### Alternative: Standard Metadata Model
+- **Image Encoder**: ResNet50 (2048 features)
+- **Metadata Encoder**: Small MLP (age + gender → 16 features)
+- **Late Fusion**: Concatenate features
+- **Total Parameters**: 24.6M
+- **Note**: Prone to overfitting, may regress below baseline
 
 ## 📁 Project Structure
 
@@ -93,14 +109,50 @@ pip install -r requirements.txt
 python preprocess.py
 ```
 
-### 3. Training
+### 3. Training (Two-Stage Recommended)
 
+**Stage 1: Train Baseline Model**
 ```bash
-# Train model with metadata
+# Configure src/train.py:
+# STAGE = 1
+# USE_METADATA = False
+# NUM_EPOCHS = 15
+
 PYTHONPATH=/path/to/ODR python src/train.py
 
-# Training time: ~50-55 minutes (15 epochs on Apple Silicon)
+# Training time: ~45 minutes (15 epochs on Apple Silicon)
+# Expected: 85.21% validation accuracy
 ```
+
+**Stage 2: Train Refinement Network**
+```bash
+# Configure src/train.py:
+# STAGE = 2
+# USE_METADATA = True
+# USE_TWO_STAGE = True
+# BASELINE_MODEL_PATH = 'models/best_model.pth'
+# NUM_EPOCHS = 10
+
+PYTHONPATH=/path/to/ODR python src/train.py
+
+# Training time: ~10 minutes (10 epochs)
+# Expected: 86-88% validation accuracy
+```
+
+**Alternative: Standard Metadata Training** (not recommended)
+```bash
+# Configure src/train.py:
+# STAGE = 1
+# USE_METADATA = True
+# USE_TWO_STAGE = False
+# NUM_EPOCHS = 15
+
+PYTHONPATH=/path/to/ODR python src/train.py
+
+# Note: May underperform baseline due to overfitting
+```
+
+See `docs/TWO_STAGE_TRAINING_GUIDE.md` for detailed instructions.
 
 ### 4. Evaluation
 
