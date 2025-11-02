@@ -39,14 +39,16 @@ env/
 *.tiff
 
 # ODIR-5K dataset folders
-ODIR-5K/Training Images/
-ODIR-5K/Testing Images/
+ODIR-5K/
+Eye Disease Retinal Images/
 Images to Classify/
 preprocessed_data/
+preprocessed_data_enhanced/
 models/
 
 # Results and outputs
 evaluation_results/
+outputs/
 test_predictions.json
 *.json
 

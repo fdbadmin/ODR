@@ -11,7 +11,7 @@ import warnings
 
 from config import (
     CSV_PATH, DATA_DIR, DISEASE_LABELS, LABEL_COLUMNS, 
-    DISEASE_COLORS, DEFAULT_IMAGE_SIZE
+    DISEASE_COLORS, DEFAULT_IMAGE_SIZE, TRAIN_IMAGE_DIR, TEST_IMAGE_DIR
 )
 
 warnings.filterwarnings('ignore')
@@ -233,8 +233,9 @@ def visualize_samples(df: pd.DataFrame, n_samples: int = 5,
         if image_column in row and pd.notna(row[image_column]):
             # Try different possible paths
             possible_paths = [
+                TRAIN_IMAGE_DIR / row[image_column],
+                TEST_IMAGE_DIR / row[image_column],
                 DATA_DIR / row[image_column],
-                DATA_DIR / 'ODIR-5K' / 'ODIR-5K' / 'Training Images' / row[image_column],
                 DATA_DIR / 'preprocessed_images' / row[image_column],
             ]
             
