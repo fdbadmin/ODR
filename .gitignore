@@ -46,6 +46,10 @@ preprocessed_data/
 preprocessed_data_enhanced/
 models/
 
+# Backup directories
+backup_*/
+models_*_backup/
+
 # Results and outputs
 evaluation_results/
 outputs/
