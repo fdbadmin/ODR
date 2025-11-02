@@ -571,7 +571,7 @@ if __name__ == "__main__":
     
     # Configuration
     PREPROCESSING_METHOD = 'full'  # 'basic', 'green', 'full', or 'vessel'
-    OUTPUT_DIR = 'preprocessed_data_enhanced'
+    OUTPUT_DIR = 'preprocessed_data'  # Changed from 'preprocessed_data_enhanced'
     
     print(f"\n🎯 Preprocessing method: {PREPROCESSING_METHOD.upper()}")
     print(f"Output directory: {OUTPUT_DIR}")

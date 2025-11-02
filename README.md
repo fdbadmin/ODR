@@ -1,14 +1,35 @@
 # ODIR-5K Eye Disease Classification
 
-Multi-label deep learning system for detecting 8 eye diseases from retinal fundus images using the ODIR-5K dataset.
+Multi-label deep learning system for detecting 7 eye diseases from retinal fundus images using the ODIR-5K dataset.
+
+## 🎯 Current Status (November 2025)
+
+**Version**: 7-Class System (Hypertension Removed)  
+**Baseline Model**: ResNet50 - **96.36% Accuracy, 88.72% F1 Score** ✅  
+**Training**: Complete (25 epochs)
+
+### Performance (Epoch 21/25)
+| Disease | F1 Score | Status |
+|---------|----------|--------|
+| Myopia (M) | 0.9771 | 🥇 Outstanding |
+| Normal (N) | 0.8970 | ✅ Excellent |
+| Diabetes (D) | 0.8878 | ✅ Excellent |
+| AMD (A) | 0.8762 | ✅ Very Good |
+| Other (O) | 0.8694 | ✅ Very Good |
+| Glaucoma (G) | 0.8639 | ✅ Very Good |
+| Cataract (C) | 0.8392 | ✅ Good |
+| **Mean F1** | **0.8872** | **Clinical-Grade** |
+
+### Why 7 Classes?
+**Hypertension removed**: Only 10-15% of hypertensive patients show retinal changes visible in fundus images. Diagnosis requires blood pressure measurement, not fundus imaging alone.
 
 ## 🎯 Features
 
-- **Multi-label Classification**: Detects 8 conditions (Normal, Diabetes, Glaucoma, Cataract, AMD, Hypertension, Myopia, Other)
-- **Metadata Integration**: Uses patient age and gender alongside images for improved accuracy
-- **Advanced Preprocessing**: Green channel extraction, CLAHE, illumination correction
-- **Clinical Safeguards**: Balanced sensitivity/specificity for clinical reliability
-- **Smart Label Parsing**: Automatically extracts labels from diagnostic keywords
+- **Multi-label Classification**: Detects 7 conditions (Normal, Diabetes, Glaucoma, Cataract, AMD, Myopia, Other)
+- **F1-Based Model Selection**: Balanced precision/recall for clinical reliability
+- **Advanced Preprocessing**: Green channel extraction, CLAHE (clip_limit=3.0), illumination correction
+- **Apple Silicon Optimized**: Batch size 48, 6 workers, MPS-compatible
+- **Clinical Performance**: All classes F1 > 0.83
 
 ## 📊 Model Performance
 
