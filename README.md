@@ -61,30 +61,60 @@ Multi-label deep learning system for detecting 7 eye diseases from retinal fundu
 
 ## 📊 Deployment
 
-### Production Usage
+### Quick Start - Predict from JPEG Images
 
+**Command Line (Easiest):**
+```bash
+# Single image
+python src/predict_from_image.py --image path/to/fundus.jpg
+
+# Multiple images
+python src/predict_from_image.py --images img1.jpg img2.jpg img3.jpg
+
+# Save results to JSON
+python src/predict_from_image.py --image fundus.jpg --output predictions.json
+```
+
+**Python Code:**
 ```python
+from src.predict_from_image import preprocess_fundus_image
 from src.production_ensemble import ProductionEnsemble
 
-# Initialize ensemble
+# Initialize model (one time)
 ensemble = ProductionEnsemble(device='mps')  # or 'cuda', 'cpu'
 
-# Single image prediction
-image = load_preprocessed_image('path/to/fundus.jpg')  # (224, 224, 3)
+# Preprocess JPEG image (automatic: green channel, CLAHE, normalization)
+image = preprocess_fundus_image('path/to/fundus.jpg')
+
+# Get predictions
 predictions = ensemble.predict(image)
 
-# Output format:
-# {
-#   'Normal': {'predicted': False, 'confidence': 0.001, 'threshold': 0.66},
-#   'Diabetes': {'predicted': True, 'confidence': 0.852, 'threshold': 0.41},
-#   'Glaucoma': {'predicted': False, 'confidence': 0.076, 'threshold': 0.39},
-#   ...
-# }
-
-# Batch prediction
-images = load_multiple_images(['img1.jpg', 'img2.jpg'])  # (N, 224, 224, 3)
-predictions = ensemble.predict_batch(images)
+# Check results
+for disease, info in predictions.items():
+    if info['predicted']:
+        print(f"⚠️ {disease}: {info['confidence']*100:.1f}% confidence")
 ```
+
+**Output Format:**
+```python
+{
+  'Normal': {'predicted': False, 'confidence': 0.385, 'threshold': 0.66},
+  'Diabetes': {'predicted': False, 'confidence': 0.037, 'threshold': 0.41},
+  'Glaucoma': {'predicted': False, 'confidence': 0.012, 'threshold': 0.39},
+  'Cataract': {'predicted': False, 'confidence': 0.084, 'threshold': 0.66},
+  'AMD': {'predicted': False, 'confidence': 0.022, 'threshold': 0.76},
+  'Myopia': {'predicted': False, 'confidence': 0.046, 'threshold': 0.56},
+  'Other': {'predicted': True, 'confidence': 0.464, 'threshold': 0.31}
+}
+```
+
+**Preprocessing (Automatic):**
+- ✅ Green channel extraction (most informative for fundus images)
+- ✅ CLAHE enhancement (clip_limit=3.0)
+- ✅ Illumination correction
+- ✅ Resize to 224x224
+- ✅ Normalization
+- **Just provide raw JPEG files - no manual preprocessing needed!**
 
 ### Model Files Required
 
