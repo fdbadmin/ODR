@@ -299,7 +299,7 @@
         <div class="header">
             <h1>🔬 Ocular Disease Classifier</h1>
             <p>AI-Powered Fundus Image Analysis</p>
-            <p style="font-size: 0.9em; margin-top: 10px;">ResNet50 Model • 96.5% Accuracy • 8 Disease Categories</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">3-Model Ensemble • 91.51% F1 Score • 96.84% Accuracy • 7 Disease Categories</p>
         </div>
 
         <div class="content">
@@ -337,11 +337,12 @@
                 <p style="margin-bottom: 15px;"><strong>Understanding the AI Analysis:</strong></p>
                 
                 <div style="margin-bottom: 15px;">
-                    <strong>🎯 Confidence Scores (0-100%):</strong>
+                    <strong>🎯 Confidence Scores & Thresholds:</strong>
                     <ul style="margin-top: 5px;">
-                        <li><strong>50% or higher = DETECTED</strong> - The AI believes this condition is present</li>
-                        <li><strong>Below 50% = Not Detected</strong> - The AI believes this condition is absent</li>
-                        <li><strong>Higher % = More confident</strong> - 95% is more certain than 55%</li>
+                        <li><strong>Above threshold = DETECTED</strong> - The AI believes this condition is present</li>
+                        <li><strong>Below threshold = Not Detected</strong> - The AI believes this condition is absent</li>
+                        <li><strong>Optimal thresholds</strong> - Each disease has a different threshold (31%-76%) optimized for best accuracy</li>
+                        <li><strong>Higher confidence = More certain</strong> - 95% is more certain than 55%</li>
                     </ul>
                 </div>
 
@@ -353,7 +354,6 @@
                         <li><strong>Glaucoma:</strong> Damage to the optic nerve, often from high eye pressure</li>
                         <li><strong>Cataract:</strong> Clouding of the eye's natural lens</li>
                         <li><strong>AMD (Age-related Macular Degeneration):</strong> Deterioration of central vision</li>
-                        <li><strong>Hypertensive Retinopathy:</strong> Retinal damage from high blood pressure</li>
                         <li><strong>Pathological Myopia:</strong> Severe nearsightedness with complications</li>
                         <li><strong>Other Diseases:</strong> Various abnormalities not fitting the above categories</li>
                     </ul>
@@ -363,9 +363,9 @@
                     <strong>⚠️ Important Notes:</strong>
                     <ul style="margin-top: 5px;">
                         <li><strong>Multiple conditions can coexist</strong> - An eye may have diabetes AND cataracts</li>
-                        <li><strong>96.5% accuracy ≠ 100%</strong> - False positives and negatives can occur</li>
+                        <li><strong>91.51% F1 score ≠ 100%</strong> - False positives and negatives can occur</li>
                         <li><strong>This is a screening tool</strong> - Not a replacement for professional diagnosis</li>
-                        <li><strong>Low scores don't mean zero risk</strong> - A 45% score still warrants attention</li>
+                        <li><strong>Optimal thresholds used</strong> - Each disease has a different detection threshold (not 50%)</li>
                     </ul>
                 </div>
 
@@ -382,17 +382,18 @@
             <div class="info-box">
                 <h3>ℹ️ About This Classifier</h3>
                 <ul>
-                    <li><strong>Model:</strong> ResNet50 with transfer learning</li>
-                    <li><strong>Dataset:</strong> ODIR-5K (3,500 patients, 7,000 images)</li>
-                    <li><strong>Accuracy:</strong> 96.5% validation accuracy</li>
-                    <li><strong>Categories:</strong> Normal, Diabetes, Glaucoma, Cataract, AMD, Hypertension, Myopia, Other abnormalities</li>
+                    <li><strong>Model:</strong> 3-Model Ensemble (ResNet50 + EfficientNet-B3 + DenseNet-121)</li>
+                    <li><strong>Dataset:</strong> ODIR-5K (5,113 training images)</li>
+                    <li><strong>Performance:</strong> 91.51% F1 Score, 96.84% Label Accuracy</li>
+                    <li><strong>Optimization:</strong> Per-class optimal thresholds for maximum accuracy</li>
+                    <li><strong>Categories:</strong> Normal, Diabetes, Glaucoma, Cataract, AMD, Myopia, Other abnormalities</li>
                     <li><strong>Note:</strong> This is for educational/research purposes only. Not for medical diagnosis.</li>
                 </ul>
             </div>
         </div>
 
         <div class="footer">
-            <p>Built with PyTorch and ResNet50 | <a href="https://github.com/fdbadmin/ODR" target="_blank">View on GitHub</a></p>
+            <p>Built with PyTorch • 3-Model Ensemble • <a href="https://github.com/fdbadmin/ODR" target="_blank">View on GitHub</a></p>
             <p style="margin-top: 5px; font-size: 0.85em;">⚠️ For research and educational purposes only. Consult healthcare professionals for medical advice.</p>
         </div>
     </div>
@@ -409,16 +410,15 @@
         const resultSummary = document.getElementById('resultSummary');
         const diseaseResults = document.getElementById('diseaseResults');
 
-        // Disease information
+        // Disease information (7 classes - updated)
         const diseaseInfo = {
-            'N': { name: 'Normal', fullName: 'Normal (No Disease)', color: '#4CAF50' },
-            'D': { name: 'Diabetes', fullName: 'Diabetic Retinopathy', color: '#f44336' },
-            'G': { name: 'Glaucoma', fullName: 'Glaucoma', color: '#2196F3' },
-            'C': { name: 'Cataract', fullName: 'Cataract', color: '#FF9800' },
-            'A': { name: 'AMD', fullName: 'Age-related Macular Degeneration', color: '#9C27B0' },
-            'H': { name: 'Hypertension', fullName: 'Hypertensive Retinopathy', color: '#E91E63' },
-            'M': { name: 'Myopia', fullName: 'Pathological Myopia', color: '#00BCD4' },
-            'O': { name: 'Other', fullName: 'Other Diseases/Abnormalities', color: '#607D8B' }
+            'Normal': { name: 'Normal', fullName: 'Normal (No Disease)', color: '#4CAF50' },
+            'Diabetes': { name: 'Diabetes', fullName: 'Diabetic Retinopathy', color: '#f44336' },
+            'Glaucoma': { name: 'Glaucoma', fullName: 'Glaucoma', color: '#2196F3' },
+            'Cataract': { name: 'Cataract', fullName: 'Cataract', color: '#FF9800' },
+            'AMD': { name: 'AMD', fullName: 'Age-related Macular Degeneration', color: '#9C27B0' },
+            'Myopia': { name: 'Myopia', fullName: 'Pathological Myopia', color: '#00BCD4' },
+            'Other': { name: 'Other', fullName: 'Other Diseases/Abnormalities', color: '#607D8B' }
         };
 
         // API endpoint - you'll need to set this up
@@ -514,10 +514,13 @@
             diseaseResults.innerHTML = '';
             const sortedDiseases = Object.entries(data.all_probabilities).sort((a, b) => b[1] - a[1]);
 
-            sortedDiseases.forEach(([diseaseName, probability]) => {
-                const isDetected = probability > 0.5;
-                const diseaseCode = Object.keys(diseaseInfo).find(key => diseaseInfo[key].name === diseaseName || diseaseInfo[key].fullName === diseaseName);
-                const info = diseaseCode ? diseaseInfo[diseaseCode] : { name: diseaseName, fullName: diseaseName };
+            sortedDiseases.forEach(([diseaseName, confidence]) => {
+                // Check if detected (find in detected_diseases array)
+                const detectedInfo = data.detected_diseases.find(d => d.name === diseaseName);
+                const isDetected = detectedInfo !== undefined;
+                const threshold = detectedInfo ? detectedInfo.threshold : 0.5;
+                
+                const info = diseaseInfo[diseaseName] || { name: diseaseName, fullName: diseaseName };
 
                 const card = document.createElement('div');
                 card.className = `disease-card ${isDetected ? 'detected' : ''}`;
@@ -530,9 +533,12 @@
                         </span>
                     </div>
                     <div class="confidence-bar">
-                        <div class="confidence-fill" style="width: ${probability * 100}%">
-                            ${(probability * 100).toFixed(1)}%
+                        <div class="confidence-fill" style="width: ${confidence * 100}%">
+                            ${(confidence * 100).toFixed(1)}%
                         </div>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 0.85em; color: #666;">
+                        Threshold: ${(threshold * 100).toFixed(1)}%
                     </div>
                 `;
                 
@@ -561,20 +567,19 @@
                 // Simulate API delay
                 await new Promise(resolve => setTimeout(resolve, 2000));
 
-                // Simulated results
+                // Simulated results (7 classes)
                 const demoResults = {
                     detected_diseases: [
-                        { name: 'Diabetes', probability: 0.946 }
+                        { name: 'Diabetes', confidence: 0.852, threshold: 0.41 }
                     ],
                     all_probabilities: {
-                        'Diabetic Retinopathy': 0.946,
-                        'Normal': 0.049,
-                        'Other Diseases/Abnormalities': 0.108,
-                        'Hypertensive Retinopathy': 0.049,
-                        'Glaucoma': 0.007,
-                        'Pathological Myopia': 0.004,
-                        'Age-related Macular Degeneration': 0.003,
-                        'Cataract': 0.003
+                        'Diabetes': 0.852,
+                        'Other': 0.108,
+                        'Cataract': 0.084,
+                        'Myopia': 0.046,
+                        'Normal': 0.023,
+                        'AMD': 0.022,
+                        'Glaucoma': 0.012
                     }
                 };
 

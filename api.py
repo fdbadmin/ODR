@@ -1,6 +1,6 @@
 """
 Flask API for ODIR-5K Ocular Disease Classification
-Serves predictions for the web interface
+Serves predictions for the web interface using the final ensemble model
 """
 
 from flask import Flask, request, jsonify
@@ -13,101 +13,104 @@ import io
 from PIL import Image
 import sys
 
-# Import our model
-from train import MultiLabelClassifier
-from config import DISEASE_LABELS, DEFAULT_IMAGE_SIZE
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
+
+# Import our production ensemble
+from production_ensemble import ProductionEnsemble
+from config import DISEASE_LABELS
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Global model variable
-model = None
-device = None
+# Global ensemble model
+ensemble = None
 
-def preprocess_image(image_bytes):
+def preprocess_fundus_image(image_bytes):
     """
-    Preprocess image for model input
-    Same preprocessing as training
+    Complete preprocessing matching training pipeline
     """
     # Convert bytes to numpy array
     nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     
-    if img is None:
+    if image is None:
         raise ValueError("Failed to decode image")
     
     # Convert BGR to RGB
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     
-    # Apply CLAHE (same as preprocessing)
-    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
-    l, a, b = cv2.split(lab)
+    # Extract green channel (most informative for fundus)
+    green_channel = image[:, :, 1]
+    
+    # Apply CLAHE enhancement
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    l = clahe.apply(l)
-    lab = cv2.merge([l, a, b])
-    img = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+    enhanced = clahe.apply(green_channel)
     
-    # Resize
-    img = cv2.resize(img, DEFAULT_IMAGE_SIZE)
+    # Illumination correction
+    median_filtered = cv2.medianBlur(enhanced, 21)
+    corrected = cv2.subtract(enhanced, median_filtered)
+    corrected = cv2.add(corrected, 128)
+    
+    # Create 3-channel image
+    preprocessed = np.stack([corrected, corrected, corrected], axis=-1)
+    
+    # Resize to 224x224
+    preprocessed = cv2.resize(preprocessed, (224, 224))
     
     # Normalize to [0, 1]
-    img = img.astype(np.float32) / 255.0
+    preprocessed = preprocessed.astype(np.float32) / 255.0
     
-    # Convert to tensor (HWC -> CHW)
-    img_tensor = torch.from_numpy(img).permute(2, 0, 1)
-    
-    # Add batch dimension
-    img_tensor = img_tensor.unsqueeze(0)
-    
-    return img_tensor
+    return preprocessed
 
 def load_model():
-    """Load the trained model"""
-    global model, device
+    """Load the trained ensemble model"""
+    global ensemble
     
-    # Detect device (Cloud deployments typically use CPU)
+    # Detect device
     if torch.backends.mps.is_available():
-        device = torch.device("mps")
+        device = "mps"
     elif torch.cuda.is_available():
-        device = torch.device("cuda")
+        device = "cuda"
     else:
-        device = torch.device("cpu")
+        device = "cpu"
         print("Note: Running on CPU (normal for cloud deployments)")
     
     print(f"Using device: {device}")
     
-    # Load model
-    model_path = Path("models/best_model.pth")
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model file not found: {model_path}")
-    
-    model = MultiLabelClassifier(num_classes=8)
-    
-    # Load checkpoint (may contain additional keys like optimizer state)
-    checkpoint = torch.load(model_path, map_location=device)
-    
-    # Handle different checkpoint formats
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    else:
-        model.load_state_dict(checkpoint)
-    
-    model = model.to(device)
-    model.eval()
-    
-    print("Model loaded successfully!")
+    # Load production ensemble
+    try:
+        ensemble = ProductionEnsemble(
+            device=device,
+            models_dir='models',
+            thresholds_path='results/optimal_thresholds.json'
+        )
+        
+        # Get model info
+        info = ensemble.get_model_info()
+        print("✓ Ensemble model loaded successfully!")
+        print(f"  Models: {', '.join(info['models'])}")
+        print(f"  Performance: F1={info['performance']['mean_f1']:.4f}, Accuracy={info['performance']['label_accuracy']:.4f}")
+    except Exception as e:
+        print(f"Error loading ensemble: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 @app.route('/')
 def home():
     """Home endpoint with API info"""
+    model_info = ensemble.get_model_info() if ensemble else {}
+    
     return jsonify({
         "name": "ODIR-5K Ocular Disease Classifier API",
-        "version": "1.0",
-        "model": "ResNet50",
-        "accuracy": "96.5%",
-        "diseases": list(DISEASE_LABELS.values()),
+        "version": "2.0",
+        "model": "3-Model Ensemble (ResNet50 + EfficientNet-B3 + DenseNet-121)",
+        "performance": model_info.get('performance', {}),
+        "diseases": model_info.get('diseases', list(DISEASE_LABELS.values())),
         "endpoints": {
             "/predict": "POST - Upload image for prediction",
+            "/batch_predict": "POST - Upload multiple images",
             "/health": "GET - Check API health"
         }
     })
@@ -115,16 +118,19 @@ def home():
 @app.route('/health')
 def health():
     """Health check endpoint"""
+    model_info = ensemble.get_model_info() if ensemble else {}
+    
     return jsonify({
         "status": "healthy",
-        "model_loaded": model is not None,
-        "device": str(device) if device else None
+        "model_loaded": ensemble is not None,
+        "device": ensemble.device if ensemble else None,
+        "models": model_info.get('models', [])
     })
 
 @app.route('/predict', methods=['POST'])
 def predict():
     """
-    Predict diseases from uploaded fundus image
+    Predict diseases from uploaded fundus image using ensemble model
     
     Expected: multipart/form-data with 'image' file
     Returns: JSON with predictions
@@ -139,48 +145,41 @@ def predict():
         if file.filename == '':
             return jsonify({"error": "No file selected"}), 400
         
-        # Read image bytes
+        # Read and preprocess image
         image_bytes = file.read()
+        preprocessed_image = preprocess_fundus_image(image_bytes)
         
-        # Preprocess image
-        img_tensor = preprocess_image(image_bytes)
-        img_tensor = img_tensor.to(device)
-        
-        # Make prediction
-        with torch.no_grad():
-            outputs = model(img_tensor)
-            probabilities = torch.sigmoid(outputs).cpu().numpy()[0]
-        
-        # Get threshold from query params (default 0.5)
-        threshold = float(request.args.get('threshold', 0.5))
+        # Make prediction using ensemble
+        predictions = ensemble.predict(preprocessed_image)
         
         # Format results
         results = {
             "success": True,
             "image_name": file.filename,
-            "threshold": threshold,
+            "model": "3-Model Ensemble",
             "detected_diseases": [],
             "all_probabilities": {}
         }
         
-        for idx, (disease_code, disease_name) in enumerate(DISEASE_LABELS.items()):
-            prob = float(probabilities[idx])
-            results["all_probabilities"][disease_name] = prob
+        for disease_name, info in predictions.items():
+            results["all_probabilities"][disease_name] = info['confidence']
             
-            if prob > threshold:
+            if info['predicted']:
                 results["detected_diseases"].append({
-                    "code": disease_code,
                     "name": disease_name,
-                    "probability": prob
+                    "confidence": info['confidence'],
+                    "threshold": info['threshold']
                 })
         
-        # Sort detected diseases by probability
-        results["detected_diseases"].sort(key=lambda x: x["probability"], reverse=True)
+        # Sort detected diseases by confidence
+        results["detected_diseases"].sort(key=lambda x: x["confidence"], reverse=True)
         
         return jsonify(results)
     
     except Exception as e:
         print(f"Error during prediction: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "success": False,
             "error": str(e)
@@ -189,7 +188,7 @@ def predict():
 @app.route('/batch_predict', methods=['POST'])
 def batch_predict():
     """
-    Predict diseases from multiple images
+    Predict diseases from multiple images using ensemble model
     
     Expected: multipart/form-data with multiple 'images' files
     Returns: JSON with predictions for each image
@@ -203,12 +202,10 @@ def batch_predict():
         if len(files) == 0:
             return jsonify({"error": "No files selected"}), 400
         
-        threshold = float(request.args.get('threshold', 0.5))
-        
         results = {
             "success": True,
             "total_images": len(files),
-            "threshold": threshold,
+            "model": "3-Model Ensemble",
             "predictions": []
         }
         
@@ -216,13 +213,10 @@ def batch_predict():
             try:
                 # Read and preprocess image
                 image_bytes = file.read()
-                img_tensor = preprocess_image(image_bytes)
-                img_tensor = img_tensor.to(device)
+                preprocessed_image = preprocess_fundus_image(image_bytes)
                 
-                # Make prediction
-                with torch.no_grad():
-                    outputs = model(img_tensor)
-                    probabilities = torch.sigmoid(outputs).cpu().numpy()[0]
+                # Make prediction using ensemble
+                predictions = ensemble.predict(preprocessed_image)
                 
                 # Format result for this image
                 image_result = {
@@ -231,18 +225,17 @@ def batch_predict():
                     "all_probabilities": {}
                 }
                 
-                for idx, (disease_code, disease_name) in enumerate(DISEASE_LABELS.items()):
-                    prob = float(probabilities[idx])
-                    image_result["all_probabilities"][disease_name] = prob
+                for disease_name, info in predictions.items():
+                    image_result["all_probabilities"][disease_name] = info['confidence']
                     
-                    if prob > threshold:
+                    if info['predicted']:
                         image_result["detected_diseases"].append({
-                            "code": disease_code,
                             "name": disease_name,
-                            "probability": prob
+                            "confidence": info['confidence'],
+                            "threshold": info['threshold']
                         })
                 
-                image_result["detected_diseases"].sort(key=lambda x: x["probability"], reverse=True)
+                image_result["detected_diseases"].sort(key=lambda x: x["confidence"], reverse=True)
                 results["predictions"].append(image_result)
                 
             except Exception as e:
@@ -255,6 +248,8 @@ def batch_predict():
     
     except Exception as e:
         print(f"Error during batch prediction: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "success": False,
             "error": str(e)
