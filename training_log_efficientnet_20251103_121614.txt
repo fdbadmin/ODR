@@ -1,0 +1,53 @@
+/Users/fdb/VSCode/ODR/src/augmented_dataset.py:74: UserWarning: Argument(s) 'mode' are not valid for transform Affine
+  A.Affine(
+/Users/fdb/VSCode/ODR/src/augmented_dataset.py:126: UserWarning: Argument(s) 'var_limit, mean' are not valid for transform GaussNoise
+  A.GaussNoise(
+/Users/fdb/VSCode/ODR/src/augmented_dataset.py:142: UserWarning: Argument(s) 'max_holes, max_height, max_width' are not valid for transform CoarseDropout
+  A.CoarseDropout(
+======================================================================
+ENSEMBLE MODEL TRAINING
+======================================================================
+
+Configuration:
+  Model: efficientnet_b3
+  Batch size: 64
+  Epochs: 25
+  Num workers: 0
+
+Advanced Features:
+  Data augmentation: True
+  Focal Loss: True (gamma=2.0)
+  Weighted sampling: True
+🚀 Using MPS (Metal Performance Shaders) - Apple Silicon acceleration!
+
+📂 Loading preprocessed data...
+Loaded dataset: 5113 samples
+  Image shape: (5113, 224, 224, 3)
+  Label shape: (5113, 7)
+  Augmentation: ENABLED
+Loaded dataset: 1279 samples
+  Image shape: (1279, 224, 224, 3)
+  Label shape: (1279, 7)
+  Augmentation: DISABLED
+
+📊 Using weighted sampling to balance classes...
+
+======================================================================
+1. TRAINING EFFICIENTNET-B3
+======================================================================
+✓ Total parameters: 10,706,991
+✓ Trainable parameters: 10,706,991
+
+======================================================================
+TRAINING EFFICIENTNET-B3
+======================================================================
+
+✓ Using Focal Loss (alpha=0.25, gamma=2.0)
+Traceback (most recent call last):
+  File "/Users/fdb/VSCode/ODR/src/train_ensemble_models.py", line 407, in <module>
+    main()
+  File "/Users/fdb/VSCode/ODR/src/train_ensemble_models.py", line 364, in main
+    train_model(
+  File "/Users/fdb/VSCode/ODR/src/train_ensemble_models.py", line 196, in train_model
+    criterion = FocalLoss(alpha=0.25, gamma=focal_gamma, pos_weight=class_weights)
+TypeError: __init__() got an unexpected keyword argument 'pos_weight'

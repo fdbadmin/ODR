@@ -16,6 +16,8 @@ sys.path.append('/Users/fdb/VSCode/ODR')
 
 from config import LABEL_COLUMNS, RANDOM_SEED
 from src.ensemble_models import EfficientNetB3Classifier, DenseNet121Classifier
+from src.augmented_dataset import AugmentedODIRDataset
+from src.imbalance_solutions import FocalLoss, get_weighted_sampler
 
 # Set random seeds
 torch.manual_seed(RANDOM_SEED)
@@ -31,6 +33,7 @@ class ODIRDataset(Dataset):
         print(f"Loaded dataset: {len(self.images)} samples")
         print(f"  Image shape: {self.images.shape}")
         print(f"  Label shape: {self.labels.shape}")
+        print(f"  NOTE: This is the old dataset class. Consider using AugmentedODIRDataset for augmentation support.")
     
     def __len__(self):
         return len(self.images)
@@ -176,8 +179,9 @@ def validate(model, val_loader, criterion, device):
 
 
 def train_model(model_name: str, model: nn.Module, train_loader, val_loader, 
-                device, num_epochs: int = 25, save_path: str = None):
-    """Train a model."""
+                device, num_epochs: int = 25, save_path: str = None,
+                use_focal_loss: bool = True, focal_gamma: float = 2.0):
+    """Train a model with advanced loss functions."""
     print(f"\n{'='*70}")
     print(f"TRAINING {model_name.upper()}")
     print(f"{'='*70}\n")
@@ -186,8 +190,14 @@ def train_model(model_name: str, model: nn.Module, train_loader, val_loader,
     train_labels = train_loader.dataset.labels
     class_weights = calculate_class_weights(train_labels).to(device)
     
-    # Setup training
-    criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights)
+    # Setup training with Focal Loss or BCE
+    if use_focal_loss:
+        print(f"✓ Using Focal Loss (alpha=0.25, gamma={focal_gamma})")
+        criterion = FocalLoss(alpha=0.25, gamma=focal_gamma)
+    else:
+        print("✓ Using BCEWithLogitsLoss with class weights")
+        criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights)
+    
     optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='max', factor=0.5, patience=2
@@ -264,12 +274,22 @@ def main():
                        help='Model to train')
     parser.add_argument('--epochs', type=int, default=25,
                        help='Number of epochs (default: 25)')
+    parser.add_argument('--no-augment', action='store_true',
+                       help='Disable data augmentation')
+    parser.add_argument('--no-focal', action='store_true',
+                       help='Use BCE instead of Focal Loss')
+    parser.add_argument('--no-weighted-sampling', action='store_true',
+                       help='Disable weighted sampling')
     args = parser.parse_args()
     
     # Configuration (M5 MacBook Pro Optimized)
-    BATCH_SIZE = 48  # Increased from 32 - M5 with 32GB can handle more
+    BATCH_SIZE = 64  # Optimized for M5 with 32GB
     NUM_EPOCHS = args.epochs
-    NUM_WORKERS = 6  # M5 has more performance cores, increased from 4
+    NUM_WORKERS = 0  # Single-threaded for macOS stability
+    USE_AUGMENTATION = not args.no_augment
+    USE_FOCAL_LOSS = not args.no_focal
+    USE_WEIGHTED_SAMPLING = not args.no_weighted_sampling
+    FOCAL_GAMMA = 2.0
     
     print("="*70)
     print("ENSEMBLE MODEL TRAINING")
@@ -279,28 +299,50 @@ def main():
     print(f"  Batch size: {BATCH_SIZE}")
     print(f"  Epochs: {NUM_EPOCHS}")
     print(f"  Num workers: {NUM_WORKERS}")
+    print(f"\nAdvanced Features:")
+    print(f"  Data augmentation: {USE_AUGMENTATION}")
+    print(f"  Focal Loss: {USE_FOCAL_LOSS} (gamma={FOCAL_GAMMA})")
+    print(f"  Weighted sampling: {USE_WEIGHTED_SAMPLING}")
     
     # Get device
     device = get_device()
     
-    # Load datasets (7-class data)
+    # Load datasets (7-class data) with augmentation support
     print("\n📂 Loading preprocessed data...")
-    train_dataset = ODIRDataset(
+    train_dataset = AugmentedODIRDataset(
         'preprocessed_data/train_images.npy',
-        'preprocessed_data/train_labels.npy'
+        'preprocessed_data/train_labels.npy',
+        augment=USE_AUGMENTATION,
+        augment_probability=0.5
     )
-    val_dataset = ODIRDataset(
+    val_dataset = AugmentedODIRDataset(
         'preprocessed_data/val_images.npy',
-        'preprocessed_data/val_labels.npy'
+        'preprocessed_data/val_labels.npy',
+        augment=False  # Never augment validation
     )
     
-    train_loader = DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True,
-        num_workers=NUM_WORKERS, pin_memory=False  # MPS doesn't support pin_memory
-    )
+    # Create data loaders with optional weighted sampling
+    if USE_WEIGHTED_SAMPLING:
+        print("\n📊 Using weighted sampling to balance classes...")
+        train_labels = train_dataset.labels
+        pos_counts = train_labels.sum(axis=0)
+        class_weights = len(train_labels) / (len(LABEL_COLUMNS) * pos_counts)
+        sampler = get_weighted_sampler(train_labels, class_weights)
+        
+        train_loader = DataLoader(
+            train_dataset, batch_size=BATCH_SIZE, sampler=sampler,
+            num_workers=NUM_WORKERS, pin_memory=False
+        )
+    else:
+        print("\n📊 Using standard random sampling...")
+        train_loader = DataLoader(
+            train_dataset, batch_size=BATCH_SIZE, shuffle=True,
+            num_workers=NUM_WORKERS, pin_memory=False
+        )
+    
     val_loader = DataLoader(
         val_dataset, batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=False  # MPS doesn't support pin_memory
+        num_workers=NUM_WORKERS, pin_memory=False
     )
     
     # Train models
@@ -326,7 +368,9 @@ def main():
             val_loader,
             device,
             num_epochs=NUM_EPOCHS,
-            save_path='models/efficientnet_b3_model.pth'
+            save_path='models/efficientnet_b3_model.pth',
+            use_focal_loss=USE_FOCAL_LOSS,
+            focal_gamma=FOCAL_GAMMA
         )
     
     if args.model in ['densenet121', 'both']:
@@ -349,7 +393,9 @@ def main():
             val_loader,
             device,
             num_epochs=NUM_EPOCHS,
-            save_path='models/densenet121_model.pth'
+            save_path='models/densenet121_model.pth',
+            use_focal_loss=USE_FOCAL_LOSS,
+            focal_gamma=FOCAL_GAMMA
         )
     
     print("\n" + "="*70)

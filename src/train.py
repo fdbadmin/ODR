@@ -14,6 +14,8 @@ from tqdm import tqdm
 import json
 
 from config import LABEL_COLUMNS, RANDOM_SEED
+from augmented_dataset import AugmentedODIRDataset
+from imbalance_solutions import FocalLoss, get_weighted_sampler
 
 # Set random seeds for reproducibility
 torch.manual_seed(RANDOM_SEED)
@@ -642,6 +644,13 @@ def main():
     USE_TWO_STAGE = True  # Set to True for two-stage refinement approach
     USE_ENHANCED_METADATA = True  # Set to True to use 18-feature enhanced metadata
     
+    # NEW: Augmentation and advanced loss options
+    USE_AUGMENTATION = True  # Set to True to enable data augmentation during training
+    AUGMENTATION_PROBABILITY = 0.5  # Probability of applying each augmentation (0.5 = 50%)
+    USE_FOCAL_LOSS = True  # Set to True to use Focal Loss instead of BCE (better for class imbalance)
+    FOCAL_LOSS_GAMMA = 2.0  # Focal Loss focusing parameter (higher = focus more on hard examples)
+    USE_WEIGHTED_SAMPLING = True  # Set to True to oversample minority classes in batches
+    
     # Path to baseline model (required for STAGE=2 or USE_TWO_STAGE=True)
     BASELINE_MODEL_PATH = 'models/baseline_model.pth'  # Path to trained baseline
     
@@ -651,18 +660,18 @@ def main():
     
     if STAGE == 1 or not USE_TWO_STAGE:
         # Stage 1: Train baseline or standard metadata model
-        BATCH_SIZE = 48  # Increased from 32 - M5 with 32GB can handle more
+        BATCH_SIZE = 64  # Optimized for M5 with 32GB (increased from 48)
         NUM_EPOCHS = 25
         LEARNING_RATE = 1e-4
         WEIGHT_DECAY = 1e-5
     else:
         # Stage 2: Train refinement network (faster, smaller model)
-        BATCH_SIZE = 48  # Increased from 32
+        BATCH_SIZE = 64  # Optimized for M5 with 32GB (increased from 48)
         NUM_EPOCHS = 15  # Fewer epochs needed for refinement
         LEARNING_RATE = 5e-5  # Lower learning rate for fine-tuning
         WEIGHT_DECAY = 1e-5
     
-    NUM_WORKERS = 6  # M5 has more performance cores, increased from 4
+    NUM_WORKERS = 0  # Single-threaded for macOS stability (avoid multiprocessing issues)
     
     print("="*70)
     print("ODIR-5K MULTI-LABEL CLASSIFICATION TRAINING")
@@ -676,6 +685,14 @@ def main():
     print(f"  Use metadata: {USE_METADATA}")
     if USE_TWO_STAGE and STAGE == 2:
         print(f"  Baseline model: {BASELINE_MODEL_PATH}")
+    print(f"\nAdvanced Training Features:")
+    print(f"  Data augmentation: {USE_AUGMENTATION}")
+    if USE_AUGMENTATION:
+        print(f"    Augmentation probability: {AUGMENTATION_PROBABILITY}")
+    print(f"  Focal Loss: {USE_FOCAL_LOSS}")
+    if USE_FOCAL_LOSS:
+        print(f"    Gamma (focusing): {FOCAL_LOSS_GAMMA}")
+    print(f"  Weighted sampling: {USE_WEIGHTED_SAMPLING}")
     print(f"\nHyperparameters:")
     print(f"  Batch size: {BATCH_SIZE}")
     print(f"  Epochs: {NUM_EPOCHS}")
@@ -706,46 +723,75 @@ def main():
             metadata_dim = 2  # Simple metadata has 2 features (age, gender)
             print(f"  Using simple metadata (2 features)")
         
-        train_dataset = ODIRDataset(
+        train_dataset = AugmentedODIRDataset(
             'preprocessed_data/train_images.npy',
             'preprocessed_data/train_labels.npy',
-            train_metadata_path
+            train_metadata_path,
+            augment=USE_AUGMENTATION,
+            augment_probability=AUGMENTATION_PROBABILITY
         )
-        val_dataset = ODIRDataset(
+        val_dataset = AugmentedODIRDataset(
             'preprocessed_data/val_images.npy',
             'preprocessed_data/val_labels.npy',
-            val_metadata_path
+            val_metadata_path,
+            augment=False  # Never augment validation
         )
     else:
-        train_dataset = ODIRDataset(
+        train_dataset = AugmentedODIRDataset(
             'preprocessed_data/train_images.npy',
-            'preprocessed_data/train_labels.npy'
+            'preprocessed_data/train_labels.npy',
+            augment=USE_AUGMENTATION,
+            augment_probability=AUGMENTATION_PROBABILITY
         )
-        val_dataset = ODIRDataset(
+        val_dataset = AugmentedODIRDataset(
             'preprocessed_data/val_images.npy',
-            'preprocessed_data/val_labels.npy'
+            'preprocessed_data/val_labels.npy',
+            augment=False  # Never augment validation
         )
         metadata_dim = 0  # No metadata
     
     # SIMPLIFIED: Use standard random shuffling (no weighted sampling)
-    print("\n📊 Using standard random sampling...")
+    print("\n📊 Creating data loaders...")
     train_labels = train_dataset.labels
     pos_counts = train_labels.sum(axis=0)
     
-    # Create data loaders with standard shuffling
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,  # Standard random shuffling
-        num_workers=NUM_WORKERS,
-        pin_memory=False  # MPS doesn't support pin_memory, set to False
-    )
+    # Print class distribution
+    print("  Class distribution in training set:")
+    for i, disease in enumerate(LABEL_COLUMNS):
+        print(f"    {disease}: {int(pos_counts[i])} samples ({pos_counts[i]/len(train_labels)*100:.2f}%)")
+    
+    # Create data loaders
+    if USE_WEIGHTED_SAMPLING:
+        print("\n  Using weighted sampling to balance classes...")
+        # Calculate class weights
+        class_weights = len(train_labels) / (len(LABEL_COLUMNS) * pos_counts)
+        
+        # Create weighted sampler
+        sampler = get_weighted_sampler(train_labels, class_weights)
+        
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            sampler=sampler,  # Use sampler instead of shuffle
+            num_workers=NUM_WORKERS,
+            pin_memory=False  # MPS doesn't support pin_memory
+        )
+    else:
+        print("\n  Using standard random sampling...")
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,  # Standard random shuffling
+            num_workers=NUM_WORKERS,
+            pin_memory=False  # MPS doesn't support pin_memory
+        )
+    
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=NUM_WORKERS,
-        pin_memory=False  # MPS doesn't support pin_memory, set to False
+        pin_memory=False  # MPS doesn't support pin_memory
     )
     
     print(f"\n✓ Train batches: {len(train_loader)}")
@@ -830,9 +876,19 @@ def main():
     for i, disease in enumerate(LABEL_COLUMNS):
         print(f"    {disease}: {pos_weights[i].item():.2f} (pos: {int(pos_counts[i])}, neg: {int(neg_counts[i])})")
     
-    # SIMPLIFIED: Use standard BCE Loss with class weights (no Focal Loss, no adaptive thresholds)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
-    print("\n✓ Using BCEWithLogitsLoss with class weights (standard approach)")
+    # Choose loss function based on configuration
+    if USE_FOCAL_LOSS:
+        print(f"\n✓ Using Focal Loss (alpha=0.25, gamma={FOCAL_LOSS_GAMMA})")
+        print("  → Better for class imbalance, focuses on hard examples")
+        criterion = FocalLoss(
+            alpha=0.25,
+            gamma=FOCAL_LOSS_GAMMA,
+            pos_weight=pos_weights
+        )
+    else:
+        print("\n✓ Using BCEWithLogitsLoss with class weights (standard approach)")
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
+    
     print("✓ Using standard 0.5 threshold for all classes")
     
     # No adaptive thresholds - will use default 0.5 in training
