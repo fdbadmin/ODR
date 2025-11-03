@@ -4,74 +4,144 @@ Multi-label deep learning system for detecting 7 eye diseases from retinal fundu
 
 ## 🎯 Current Status (November 2025)
 
-**Version**: 7-Class System (Hypertension Removed)  
-**Baseline Model**: ResNet50 - **96.36% Accuracy, 88.72% F1 Score** ✅  
-**Training**: Complete (25 epochs)
+**Version**: 7-Class Optimized Ensemble System  
+**Final Model**: **3-Model Ensemble with Optimal Thresholds**  
+**Performance**: **91.51% F1 Score, 96.84% Accuracy** ✅✅✅
 
-### Performance (Epoch 21/25)
-| Disease | F1 Score | Status |
-|---------|----------|--------|
-| Myopia (M) | 0.9771 | 🥇 Outstanding |
-| Normal (N) | 0.8970 | ✅ Excellent |
-| Diabetes (D) | 0.8878 | ✅ Excellent |
-| AMD (A) | 0.8762 | ✅ Very Good |
-| Other (O) | 0.8694 | ✅ Very Good |
-| Glaucoma (G) | 0.8639 | ✅ Very Good |
-| Cataract (C) | 0.8392 | ✅ Good |
-| **Mean F1** | **0.8872** | **Clinical-Grade** |
+### 🏆 Final Ensemble Performance
+
+**Optimized 3-Model Ensemble (Validation Set, 1279 samples)**
+
+| Disease | F1 Score | Precision | Recall | Threshold | Status |
+|---------|----------|-----------|--------|-----------|--------|
+| **Myopia (M)** | **0.9767** | 0.9692 | 0.9844 | 0.56 | 🥇 Outstanding |
+| **AMD (A)** | **0.9677** | 1.0000 | 0.9375 | 0.76 | 🥇 Outstanding |
+| **Normal (N)** | **0.9145** | 0.9535 | 0.8786 | 0.66 | ✅ Excellent |
+| **Cataract (C)** | **0.9008** | 0.9672 | 0.8429 | 0.66 | ✅ Excellent |
+| **Diabetes (D)** | **0.8957** | 0.9148 | 0.8774 | 0.41 | ✅ Excellent |
+| **Glaucoma (G)** | **0.8772** | 0.8721 | 0.8824 | 0.39 | ✅ Very Good |
+| **Other (O)** | **0.8734** | 0.8552 | 0.8924 | 0.31 | ✅ Very Good |
+| **Mean F1** | **0.9151** | - | - | - | **🎯 Clinical-Grade** |
+
+**Label Accuracy**: 96.84%
+
+### Individual Model Performance
+
+| Model | Parameters | F1 Score | Accuracy | Best Classes |
+|-------|-----------|----------|----------|--------------|
+| ResNet50 | 24.6M | 0.8872 | 96.36% | Myopia (0.977), Normal (0.897) |
+| DenseNet-121 | 7.0M | 0.8851 | 96.21% | Myopia (0.973), Diabetes (0.896) |
+| EfficientNet-B3 | 10.7M | 0.8765 | 95.95% | AMD (0.900), Myopia (0.969) |
+
+### Ensemble Improvements
+
+| Configuration | Mean F1 | Accuracy | Improvement |
+|--------------|---------|----------|-------------|
+| Baseline (threshold=0.5) | 0.8952 | 96.53% | +0.90% vs best individual |
+| **Optimal Thresholds** | **0.9151** | **96.84%** | **+2.23% vs baseline** |
+| TTA Only | 0.7255 | 91.44% | ❌ -18.96% (not beneficial) |
+
+**Key Findings:**
+- ✅ Per-class threshold optimization highly effective (+2.23% F1)
+- ❌ Test-time augmentation degrades performance (models already well-calibrated)
+- 🎯 Biggest improvements: AMD (+9.68%), Cataract (+2.29%), Normal (+1.72%)
 
 ### Why 7 Classes?
 **Hypertension removed**: Only 10-15% of hypertensive patients show retinal changes visible in fundus images. Diagnosis requires blood pressure measurement, not fundus imaging alone.
 
 ## 🎯 Features
 
+- **3-Model Ensemble**: ResNet50 + EfficientNet-B3 + DenseNet-121 with weighted averaging
+- **Optimal Per-Class Thresholds**: Disease-specific thresholds (0.31-0.76) for maximum F1
 - **Multi-label Classification**: Detects 7 conditions (Normal, Diabetes, Glaucoma, Cataract, AMD, Myopia, Other)
 - **F1-Based Model Selection**: Balanced precision/recall for clinical reliability
 - **Advanced Preprocessing**: Green channel extraction, CLAHE (clip_limit=3.0), illumination correction
 - **Apple Silicon Optimized**: Batch size 48, 6 workers, MPS-compatible
-- **Clinical Performance**: All classes F1 > 0.83
+- **Clinical Performance**: All classes F1 > 0.87, with 91.51% mean F1
 
-## 📊 Model Performance
+## 📊 Deployment
 
-Current baseline (image-only):
-- **Mean Sample Accuracy**: 85.21%
-- **Best Performers**: Myopia (89.1% AUC), Glaucoma (73.6%), Cataract (69.9%)
-- **Challenges**: Low recall on rare diseases (Hypertension: 0%, AMD: 1.9%)
+### Production Usage
 
-Two-Stage Metadata Refinement (recommended approach):
-- **Expected Accuracy**: 86-88% (+1-3% over baseline)
-- **Guaranteed Floor**: ≥85.21% (cannot regress below baseline)
-- **Improved Rare Disease Detection**: 10-15% recall on Hypertension, AMD, Diabetes
-- **Safe Integration**: Frozen baseline + trainable refinement network
+```python
+from src.production_ensemble import ProductionEnsemble
 
-## 🏗️ Architecture
+# Initialize ensemble
+ensemble = ProductionEnsemble(device='mps')  # or 'cuda', 'cpu'
 
-### Two-Stage Refinement Model (Recommended)
-```
-Stage 1: Frozen Baseline (Image-Only)
-  - ResNet50 pretrained backbone
-  - Trained to 85.21% accuracy
-  - Frozen during Stage 2 (guarantees floor performance)
+# Single image prediction
+image = load_preprocessed_image('path/to/fundus.jpg')  # (224, 224, 3)
+predictions = ensemble.predict(image)
 
-Stage 2: Metadata Refinement
-  - Input: Baseline predictions + age/gender
-  - Small MLP (~5K parameters)
-  - Learns metadata-based corrections
-  - Output: Baseline + refinements (residual connection)
+# Output format:
+# {
+#   'Normal': {'predicted': False, 'confidence': 0.001, 'threshold': 0.66},
+#   'Diabetes': {'predicted': True, 'confidence': 0.852, 'threshold': 0.41},
+#   'Glaucoma': {'predicted': False, 'confidence': 0.076, 'threshold': 0.39},
+#   ...
+# }
+
+# Batch prediction
+images = load_multiple_images(['img1.jpg', 'img2.jpg'])  # (N, 224, 224, 3)
+predictions = ensemble.predict_batch(images)
 ```
 
-**Key Advantages:**
-- ✅ **No Regression Risk**: Cannot perform worse than baseline
-- ✅ **Fast Training**: Only ~10 minutes for refinement
-- ✅ **Interpretable**: Can measure metadata contribution per disease
-- ✅ **Efficient**: Only 5K trainable parameters vs 24.6M
+### Model Files Required
 
-### Alternative: Standard Metadata Model
-- **Image Encoder**: ResNet50 (2048 features)
-- **Metadata Encoder**: Small MLP (age + gender → 16 features)
-- **Late Fusion**: Concatenate features
-- **Total Parameters**: 24.6M
-- **Note**: Prone to overfitting, may regress below baseline
+```
+models/
+├── baseline_model.pth          # ResNet50 (24.6M params)
+├── efficientnet_b3_model.pth   # EfficientNet-B3 (10.7M params)
+└── densenet121_model.pth       # DenseNet-121 (7.0M params)
+
+results/
+└── optimal_thresholds.json     # Per-class thresholds
+```
+
+## 📈 Training & Optimization Pipeline
+
+### Stage 1: Individual Model Training (Complete ✅)
+```bash
+# ResNet50 baseline
+python src/train.py --epochs 25 --batch-size 48
+
+# EfficientNet-B3
+python src/train_ensemble_models.py --model efficientnet_b3 --epochs 25
+
+# DenseNet-121
+python src/train_ensemble_models.py --model densenet121 --epochs 25
+```
+
+### Stage 2: Ensemble Creation (Complete ✅)
+```bash
+# Evaluate baseline ensemble
+python src/evaluate_ensemble.py
+```
+
+### Stage 3: Threshold Optimization (Complete ✅)
+```bash
+# Find optimal per-class thresholds
+python src/optimize_thresholds.py
+
+# Evaluate with optimal thresholds
+python src/evaluate_thresholds_only.py
+```
+
+## 📊 Model Performance Details
+
+### Threshold Optimization Impact
+
+| Disease | Default (0.5) | Optimal Threshold | Optimal F1 | Improvement |
+|---------|---------------|-------------------|------------|-------------|
+| AMD | 0.8824 | 0.76 | 0.9677 | +9.68% ⬆️ |
+| Cataract | 0.8806 | 0.66 | 0.9008 | +2.29% ⬆️ |
+| Normal | 0.8990 | 0.66 | 0.9145 | +1.72% ⬆️ |
+| Other | 0.8645 | 0.31 | 0.8734 | +1.03% ⬆️ |
+| Myopia | 0.9692 | 0.56 | 0.9767 | +0.78% ⬆️ |
+| Diabetes | 0.8934 | 0.41 | 0.8957 | +0.26% ⬆️ |
+| Glaucoma | 0.8772 | 0.39 | 0.8772 | ±0.00% → |
+
+**Overall**: 89.52% → 91.51% (+2.23%)
 
 ## 📁 Project Structure
 

@@ -80,6 +80,7 @@ def calculate_metrics(predictions: np.ndarray, targets: np.ndarray, threshold: f
     
     # Per-class metrics
     per_class_metrics = {}
+    f1_scores = []
     for i, label in enumerate(LABEL_COLUMNS):
         tp = np.sum((pred_labels[:, i] == 1) & (targets[:, i] == 1))
         fp = np.sum((pred_labels[:, i] == 1) & (targets[:, i] == 0))
@@ -95,10 +96,15 @@ def calculate_metrics(predictions: np.ndarray, targets: np.ndarray, threshold: f
             'recall': recall,
             'f1': f1
         }
+        f1_scores.append(f1)
+    
+    # Calculate mean F1 score
+    mean_f1 = np.mean(f1_scores)
     
     return {
         'label_accuracy': label_acc,
         'sample_accuracy': sample_acc,
+        'mean_f1': mean_f1,
         'per_class': per_class_metrics
     }
 
@@ -188,8 +194,8 @@ def train_model(model_name: str, model: nn.Module, train_loader, val_loader,
     )
     
     # Training loop
-    best_val_acc = 0
-    history = {'train_loss': [], 'val_loss': [], 'val_acc': []}
+    best_mean_f1 = 0
+    history = {'train_loss': [], 'val_loss': [], 'val_acc': [], 'val_mean_f1': []}
     
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch+1}/{num_epochs}")
@@ -201,39 +207,49 @@ def train_model(model_name: str, model: nn.Module, train_loader, val_loader,
         # Validate
         val_loss, val_metrics = validate(model, val_loader, criterion, device)
         
-        # Update scheduler
-        scheduler.step(val_metrics['label_accuracy'])
+        # Update scheduler based on Mean F1
+        scheduler.step(val_metrics['mean_f1'])
         
         # Store history
         history['train_loss'].append(train_loss)
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_metrics['label_accuracy'])
+        history['val_mean_f1'].append(val_metrics['mean_f1'])
         
         # Print metrics
         print(f"\nResults:")
         print(f"  Train Loss: {train_loss:.4f}")
         print(f"  Val Loss: {val_loss:.4f}")
-        print(f"  Val Label Acc: {val_metrics['label_accuracy']:.4f} ({val_metrics['label_accuracy']*100:.2f}%)")
-        print(f"  Val Sample Acc: {val_metrics['sample_accuracy']:.4f} ({val_metrics['sample_accuracy']*100:.2f}%)")
+        print(f"  Val Acc: {val_metrics['label_accuracy']:.4f} ({val_metrics['label_accuracy']*100:.2f}%)")
+        print(f"  Val Mean F1: {val_metrics['mean_f1']:.4f}")
         
-        # Save best model
-        if val_metrics['label_accuracy'] > best_val_acc:
-            best_val_acc = val_metrics['label_accuracy']
+        # Print per-class F1 scores
+        print(f"  Per-class F1:", end=" ")
+        for label in LABEL_COLUMNS:
+            f1 = val_metrics['per_class'][label]['f1']
+            print(f"{label}:{f1:.3f}", end=" ")
+        print()
+        
+        # Save best model based on Mean F1 (same as baseline)
+        if val_metrics['mean_f1'] > best_mean_f1:
+            best_mean_f1 = val_metrics['mean_f1']
             if save_path:
                 checkpoint = {
                     'epoch': epoch + 1,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'val_acc': best_val_acc,
+                    'val_acc': val_metrics['label_accuracy'],
+                    'val_mean_f1': best_mean_f1,
                     'val_metrics': val_metrics,
+                    'label_columns': LABEL_COLUMNS,
                     'history': history
                 }
-                torch.save(checkpoint, save_path)
-                print(f"  ✓ Saved best model (val_acc: {best_val_acc:.4f})")
+                torch.save(checkpoint, save_path, _use_new_zipfile_serialization=False)
+                print(f"  ✓ Saved best model (mean_f1: {best_mean_f1:.4f})")
     
     print(f"\n{'='*70}")
     print(f"{model_name.upper()} TRAINING COMPLETE")
-    print(f"Best validation accuracy: {best_val_acc:.4f} ({best_val_acc*100:.2f}%)")
+    print(f"Best Mean F1: {best_mean_f1:.4f}, Val Acc: {val_metrics['label_accuracy']:.4f} ({val_metrics['label_accuracy']*100:.2f}%)")
     print(f"{'='*70}\n")
     
     return history
@@ -250,10 +266,10 @@ def main():
                        help='Number of epochs (default: 25)')
     args = parser.parse_args()
     
-    # Configuration
-    BATCH_SIZE = 32
+    # Configuration (M5 MacBook Pro Optimized)
+    BATCH_SIZE = 48  # Increased from 32 - M5 with 32GB can handle more
     NUM_EPOCHS = args.epochs
-    NUM_WORKERS = 4
+    NUM_WORKERS = 6  # M5 has more performance cores, increased from 4
     
     print("="*70)
     print("ENSEMBLE MODEL TRAINING")
@@ -267,24 +283,24 @@ def main():
     # Get device
     device = get_device()
     
-    # Load datasets
+    # Load datasets (7-class data)
     print("\n📂 Loading preprocessed data...")
     train_dataset = ODIRDataset(
-        'preprocessed_data_enhanced/train_images.npy',
-        'preprocessed_data_enhanced/train_labels.npy'
+        'preprocessed_data/train_images.npy',
+        'preprocessed_data/train_labels.npy'
     )
     val_dataset = ODIRDataset(
-        'preprocessed_data_enhanced/val_images.npy',
-        'preprocessed_data_enhanced/val_labels.npy'
+        'preprocessed_data/val_images.npy',
+        'preprocessed_data/val_labels.npy'
     )
     
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True,
-        num_workers=NUM_WORKERS, pin_memory=True
+        num_workers=NUM_WORKERS, pin_memory=False  # MPS doesn't support pin_memory
     )
     val_loader = DataLoader(
         val_dataset, batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=True
+        num_workers=NUM_WORKERS, pin_memory=False  # MPS doesn't support pin_memory
     )
     
     # Train models
