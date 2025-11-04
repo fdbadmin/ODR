@@ -18,8 +18,8 @@ class DiagnosticKeywordParser:
     def __init__(self):
         """Initialize with comprehensive disease patterns."""
         
-        # Disease code mapping: N, D, G, C, A, H, M, O
-        self.disease_codes = ['N', 'D', 'G', 'C', 'A', 'H', 'M', 'O']
+        # Disease code mapping: N, D, G, C, A, M, O (H removed - no hypertension in labels)
+        self.disease_codes = ['N', 'D', 'G', 'C', 'A', 'M', 'O']
         
         # Comprehensive pattern matching for each disease
         # Patterns are ordered by specificity (most specific first)
@@ -72,13 +72,6 @@ class DiagnosticKeywordParser:
                 'drusen',
                 'geographic atrophy',
                 'choroidal neovascularization',
-            ],
-            'H': [  # Hypertension
-                'hypertensive retinopathy',
-                'retinal arteriosclerosis',
-                'arteriovenous.*nicking',
-                'copper.*wiring',
-                'silver.*wiring',
             ],
             'M': [  # Pathological Myopia
                 'pathological myopia',
@@ -207,10 +200,10 @@ class DiagnosticKeywordParser:
         """
         if pd.isna(keywords) or keywords == '' or str(keywords).lower() == 'nan':
             # Return empty labels (will use fallback)
-            return np.zeros(8, dtype=np.float32)
+            return np.zeros(len(self.disease_codes), dtype=np.float32)
         
         # Initialize label vector
-        labels = np.zeros(8, dtype=np.float32)
+        labels = np.zeros(len(self.disease_codes), dtype=np.float32)
         
         # Clean and normalize
         keywords = str(keywords).lower().strip()

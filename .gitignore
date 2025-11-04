@@ -84,3 +84,7 @@ notebooks/evaluation/
 # Temporary files
 *.tmp
 *.temp
+
+# Training logs
+training_log_*.txt
+preprocessing_*.log

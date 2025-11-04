@@ -631,6 +631,13 @@ def train_model(model: nn.Module,
 def main():
     """Main training function."""
     
+    # Parse command-line arguments
+    import argparse
+    parser = argparse.ArgumentParser(description='Train ResNet50 model')
+    parser.add_argument('--epochs', type=int, default=25,
+                       help='Number of training epochs (default: 25)')
+    args = parser.parse_args()
+    
     # ============================================================================
     # CONFIGURATION FLAGS
     # ============================================================================
@@ -661,13 +668,13 @@ def main():
     if STAGE == 1 or not USE_TWO_STAGE:
         # Stage 1: Train baseline or standard metadata model
         BATCH_SIZE = 64  # Optimized for M5 with 32GB (increased from 48)
-        NUM_EPOCHS = 25
+        NUM_EPOCHS = args.epochs  # Use command-line argument
         LEARNING_RATE = 1e-4
         WEIGHT_DECAY = 1e-5
     else:
         # Stage 2: Train refinement network (faster, smaller model)
         BATCH_SIZE = 64  # Optimized for M5 with 32GB (increased from 48)
-        NUM_EPOCHS = 15  # Fewer epochs needed for refinement
+        NUM_EPOCHS = args.epochs  # Use command-line argument
         LEARNING_RATE = 5e-5  # Lower learning rate for fine-tuning
         WEIGHT_DECAY = 1e-5
     

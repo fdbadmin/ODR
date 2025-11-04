@@ -18,10 +18,10 @@ from config import (
     CSV_PATH, TRAIN_IMAGE_DIR, TEST_IMAGE_DIR, 
     LABEL_COLUMNS, DEFAULT_IMAGE_SIZE, RANDOM_SEED
 )
-from advanced_preprocessing import RetinalImagePreprocessor
-from keyword_label_parser import DiagnosticKeywordParser
-from severity_extractor import SeverityExtractor
-from metadata_extractor import MetadataExtractor
+from src.advanced_preprocessing import RetinalImagePreprocessor
+from src.keyword_label_parser import DiagnosticKeywordParser
+from src.severity_extractor import SeverityExtractor
+from src.metadata_extractor import MetadataExtractor
 
 
 def get_advanced_augmentation_pipeline(probability: float = 0.5) -> A.Compose:
