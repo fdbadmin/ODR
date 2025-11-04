@@ -1,78 +1,0 @@
-/Users/fdb/VSCode/ODR/src/augmented_dataset.py:74: UserWarning: Argument(s) 'mode' are not valid for transform Affine
-  A.Affine(
-/Users/fdb/VSCode/ODR/src/augmented_dataset.py:126: UserWarning: Argument(s) 'var_limit, mean' are not valid for transform GaussNoise
-  A.GaussNoise(
-/Users/fdb/VSCode/ODR/src/augmented_dataset.py:142: UserWarning: Argument(s) 'max_holes, max_height, max_width' are not valid for transform CoarseDropout
-  A.CoarseDropout(
-======================================================================
-ODIR-5K MULTI-LABEL CLASSIFICATION TRAINING
-======================================================================
-
-Configuration:
-  Training Stage: 1
-  Mode: Training baseline image-only model
-  Use metadata: False
-
-Advanced Training Features:
-  Data augmentation: True
-    Augmentation probability: 0.5
-  Focal Loss: True
-    Gamma (focusing): 2.0
-  Weighted sampling: True
-
-Hyperparameters:
-  Batch size: 48
-  Epochs: 25
-  Learning rate: 0.0001
-  Weight decay: 1e-05
-  Num workers: 6
-🚀 Using MPS (Metal Performance Shaders) - Apple Silicon acceleration!
-
-📂 Loading preprocessed data...
-Loaded dataset: 5113 samples
-  Image shape: (5113, 224, 224, 3)
-  Label shape: (5113, 7)
-  Augmentation: ENABLED
-Loaded dataset: 1279 samples
-  Image shape: (1279, 224, 224, 3)
-  Label shape: (1279, 7)
-  Augmentation: DISABLED
-
-📊 Creating data loaders...
-  Class distribution in training set:
-    N: 1681 samples (32.88%)
-    D: 1707 samples (33.39%)
-    G: 312 samples (6.10%)
-    C: 332 samples (6.49%)
-    A: 271 samples (5.30%)
-    M: 242 samples (4.73%)
-    O: 1244 samples (24.33%)
-
-  Using weighted sampling to balance classes...
-
-✓ Train batches: 107
-✓ Val batches: 27
-
-🏗️  Building model...
-✓ Using MultiLabelClassifier (image-only baseline)
-✓ Total parameters: 24,560,711
-✓ Trainable parameters: 24,560,711
-
-⚖️  Calculating class weights...
-  Class weights (higher = rarer class):
-    N: 2.04 (pos: 1681, neg: 3432)
-    D: 2.00 (pos: 1707, neg: 3406)
-    G: 15.39 (pos: 312, neg: 4801)
-    C: 14.40 (pos: 332, neg: 4781)
-    A: 17.87 (pos: 271, neg: 4842)
-    M: 20.13 (pos: 242, neg: 4871)
-    O: 3.11 (pos: 1244, neg: 3869)
-
-✓ Using Focal Loss (alpha=0.25, gamma=2.0)
-  → Better for class imbalance, focuses on hard examples
-✓ Using standard 0.5 threshold for all classes
-
-======================================================================
-STARTING TRAINING
-======================================================================
-Epoch 1 [Train]:   0%|          | 0/107 [00:00<?, ?it/s]Epoch 1 [Train]:   0%|          | 0/107 [00:16<?, ?it/s, loss=0.1199]Epoch 1 [Train]:   1%|          | 1/107 [00:16<29:06, 16.48s/it, loss=0.1199]Epoch 1 [Train]:   1%|          | 1/107 [00:17<29:06, 16.48s/it, loss=0.1136]Epoch 1 [Train]:   2%|▏         | 2/107 [00:17<12:45,  7.29s/it, loss=0.1136]Epoch 1 [Train]:   2%|▏         | 2/107 [00:18<12:45,  7.29s/it, loss=0.1019]Epoch 1 [Train]:   3%|▎         | 3/107 [00:18<07:31,  4.34s/it, loss=0.1019]Epoch 1 [Train]:   3%|▎         | 3/107 [00:18<07:31,  4.34s/it, loss=0.1143]Epoch 1 [Train]:   4%|▎         | 4/107 [00:18<05:04,  2.96s/it, loss=0.1143]Epoch 1 [Train]:   4%|▎         | 4/107 [00:19<05:04,  2.96s/it, loss=0.1250]Epoch 1 [Train]:   5%|▍         | 5/107 [00:19<03:43,  2.19s/it, loss=0.1250]Epoch 1 [Train]:   5%|▍         | 5/107 [00:20<03:43,  2.19s/it, loss=0.1056]Epoch 1 [Train]:   6%|▌         | 6/107 [00:20<02:54,  1.73s/it, loss=0.1056]Epoch 1 [Train]:   6%|▌         | 6/107 [00:21<02:54,  1.73s/it, loss=0.0977]Epoch 1 [Train]:   7%|▋         | 7/107 [00:21<02:23,  1.44s/it, loss=0.0977]Epoch 1 [Train]:   7%|▋         | 7/107 [00:22<02:23,  1.44s/it, loss=0.0987]Epoch 1 [Train]:   7%|▋         | 8/107 [00:22<02:03,  1.24s/it, loss=0.0987]Epoch 1 [Train]:   7%|▋         | 8/107 [00:23<02:03,  1.24s/it, loss=0.0879]Epoch 1 [Train]:   8%|▊         | 9/107 [00:23<01:48,  1.11s/it, loss=0.0879]Epoch 1 [Train]:   8%|▊         | 9/107 [00:23<01:48,  1.11s/it, loss=0.1019]Epoch 1 [Train]:   9%|▉         | 10/107 [00:23<01:39,  1.02s/it, loss=0.1019]Epoch 1 [Train]:   9%|▉         | 10/107 [00:24<01:39,  1.02s/it, loss=0.0877]Epoch 1 [Train]:  10%|█         | 11/107 [00:24<01:31,  1.04it/s, loss=0.0877]Epoch 1 [Train]:  10%|█         | 11/107 [00:25<01:31,  1.04it/s, loss=0.0933]Epoch 1 [Train]:  11%|█         | 12/107 [00:25<01:26,  1.09it/s, loss=0.0933]Epoch 1 [Train]:  11%|█         | 12/107 [00:26<01:26,  1.09it/s, loss=0.0963]Epoch 1 [Train]:  12%|█▏        | 13/107 [00:26<01:23,  1.13it/s, loss=0.0963]Epoch 1 [Train]:  12%|█▏        | 13/107 [00:27<01:23,  1.13it/s, loss=0.0890]Epoch 1 [Train]:  13%|█▎        | 14/107 [00:27<01:20,  1.16it/s, loss=0.0890]Epoch 1 [Train]:  13%|█▎        | 14/107 [00:28<01:20,  1.16it/s, loss=0.0907]Epoch 1 [Train]:  14%|█▍        | 15/107 [00:28<01:18,  1.17it/s, loss=0.0907]Epoch 1 [Train]:  14%|█▍        | 15/107 [00:28<01:18,  1.17it/s, loss=0.0964]Epoch 1 [Train]:  15%|█▍        | 16/107 [00:28<01:16,  1.19it/s, loss=0.0964]Epoch 1 [Train]:  15%|█▍        | 16/107 [00:29<01:16,  1.19it/s, loss=0.0918]Epoch 1 [Train]:  16%|█▌        | 17/107 [00:29<01:14,  1.20it/s, loss=0.0918]Epoch 1 [Train]:  16%|█▌        | 17/107 [00:30<01:14,  1.20it/s, loss=0.0878]Epoch 1 [Train]:  17%|█▋        | 18/107 [00:30<01:13,  1.21it/s, loss=0.0878]Epoch 1 [Train]:  17%|█▋        | 18/107 [00:31<01:13,  1.21it/s, loss=0.0954]Epoch 1 [Train]:  18%|█▊        | 19/107 [00:31<01:12,  1.22it/s, loss=0.0954]Epoch 1 [Train]:  18%|█▊        | 19/107 [00:32<01:12,  1.22it/s, loss=0.0931]Epoch 1 [Train]:  19%|█▊        | 20/107 [00:32<01:11,  1.22it/s, loss=0.0931]Epoch 1 [Train]:  19%|█▊        | 20/107 [00:32<01:11,  1.22it/s, loss=0.0888]Epoch 1 [Train]:  20%|█▉        | 21/107 [00:32<01:10,  1.23it/s, loss=0.0888]Epoch 1 [Train]:  20%|█▉        | 21/107 [00:33<01:10,  1.23it/s, loss=0.0895]Epoch 1 [Train]:  21%|██        | 22/107 [00:33<01:09,  1.23it/s, loss=0.0895]Epoch 1 [Train]:  21%|██        | 22/107 [00:34<01:09,  1.23it/s, loss=0.0892]Epoch 1 [Train]:  21%|██▏       | 23/107 [00:34<01:08,  1.23it/s, loss=0.0892]Epoch 1 [Train]:  21%|██▏       | 23/107 [00:35<01:08,  1.23it/s, loss=0.0852]Epoch 1 [Train]:  22%|██▏       | 24/107 [00:35<01:07,  1.23it/s, loss=0.0852]Epoch 1 [Train]:  22%|██▏       | 24/107 [00:36<01:07,  1.23it/s, loss=0.0928]Epoch 1 [Train]:  23%|██▎       | 25/107 [00:36<01:06,  1.24it/s, loss=0.0928]Epoch 1 [Train]:  23%|██▎       | 25/107 [00:36<01:06,  1.24it/s, loss=0.0848]Epoch 1 [Train]:  24%|██▍       | 26/107 [00:36<01:05,  1.24it/s, loss=0.0848]Epoch 1 [Train]:  24%|██▍       | 26/107 [00:37<01:05,  1.24it/s, loss=0.0883]Epoch 1 [Train]:  25%|██▌       | 27/107 [00:37<01:04,  1.24it/s, loss=0.0883]Epoch 1 [Train]:  25%|██▌       | 27/107 [00:38<01:04,  1.24it/s, loss=0.0863]Epoch 1 [Train]:  26%|██▌       | 28/107 [00:38<01:03,  1.24it/s, loss=0.0863]Epoch 1 [Train]:  26%|██▌       | 28/107 [00:39<01:03,  1.24it/s, loss=0.0865]Epoch 1 [Train]:  27%|██▋       | 29/107 [00:39<01:03,  1.22it/s, loss=0.0865]Epoch 1 [Train]:  27%|██▋       | 29/107 [00:40<01:03,  1.22it/s, loss=0.0838]Epoch 1 [Train]:  28%|██▊       | 30/107 [00:40<01:02,  1.23it/s, loss=0.0838]Epoch 1 [Train]:  28%|██▊       | 30/107 [00:41<01:02,  1.23it/s, loss=0.0868]Epoch 1 [Train]:  29%|██▉       | 31/107 [00:41<01:01,  1.23it/s, loss=0.0868]Epoch 1 [Train]:  29%|██▉       | 31/107 [00:41<01:01,  1.23it/s, loss=0.0800]Epoch 1 [Train]:  30%|██▉       | 32/107 [00:41<01:01,  1.22it/s, loss=0.0800]Epoch 1 [Train]:  30%|██▉       | 32/107 [00:42<01:01,  1.22it/s, loss=0.0811]Epoch 1 [Train]:  31%|███       | 33/107 [00:42<01:00,  1.22it/s, loss=0.0811]Epoch 1 [Train]:  31%|███       | 33/107 [00:43<01:00,  1.22it/s, loss=0.0828]Epoch 1 [Train]:  32%|███▏      | 34/107 [00:43<00:59,  1.23it/s, loss=0.0828]Epoch 1 [Train]:  32%|███▏      | 34/107 [00:44<00:59,  1.23it/s, loss=0.0801]Epoch 1 [Train]:  33%|███▎      | 35/107 [00:44<00:58,  1.23it/s, loss=0.0801]Epoch 1 [Train]:  33%|███▎      | 35/107 [00:45<00:58,  1.23it/s, loss=0.0850]Epoch 1 [Train]:  34%|███▎      | 36/107 [00:45<00:57,  1.23it/s, loss=0.0850]Epoch 1 [Train]:  34%|███▎      | 36/107 [00:45<00:57,  1.23it/s, loss=0.0851]Epoch 1 [Train]:  35%|███▍      | 37/107 [00:45<00:57,  1.23it/s, loss=0.0851]Epoch 1 [Train]:  35%|███▍      | 37/107 [00:46<00:57,  1.23it/s, loss=0.0886]Epoch 1 [Train]:  36%|███▌      | 38/107 [00:46<00:56,  1.22it/s, loss=0.0886]Epoch 1 [Train]:  36%|███▌      | 38/107 [00:47<00:56,  1.22it/s, loss=0.0783]Epoch 1 [Train]:  36%|███▋      | 39/107 [00:47<00:55,  1.22it/s, loss=0.0783]Epoch 1 [Train]:  36%|███▋      | 39/107 [00:48<00:55,  1.22it/s, loss=0.0803]Epoch 1 [Train]:  37%|███▋      | 40/107 [00:48<00:55,  1.22it/s, loss=0.0803]Epoch 1 [Train]:  37%|███▋      | 40/107 [00:49<00:55,  1.22it/s, loss=0.0805]Epoch 1 [Train]:  38%|███▊      | 41/107 [00:49<00:54,  1.22it/s, loss=0.0805]Epoch 1 [Train]:  38%|███▊      | 41/107 [00:50<00:54,  1.22it/s, loss=0.0814]Epoch 1 [Train]:  39%|███▉      | 42/107 [00:50<00:53,  1.22it/s, loss=0.0814]Epoch 1 [Train]:  39%|███▉      | 42/107 [00:50<00:53,  1.22it/s, loss=0.0825]Epoch 1 [Train]:  40%|████      | 43/107 [00:50<00:52,  1.22it/s, loss=0.0825]Epoch 1 [Train]:  40%|████      | 43/107 [00:51<00:52,  1.22it/s, loss=0.0750]Epoch 1 [Train]:  41%|████      | 44/107 [00:51<00:51,  1.22it/s, loss=0.0750]Epoch 1 [Train]:  41%|████      | 44/107 [00:52<00:51,  1.22it/s, loss=0.0722]Epoch 1 [Train]:  42%|████▏     | 45/107 [00:52<00:50,  1.22it/s, loss=0.0722]Epoch 1 [Train]:  42%|████▏     | 45/107 [00:53<00:50,  1.22it/s, loss=0.0819]Epoch 1 [Train]:  43%|████▎     | 46/107 [00:53<00:49,  1.23it/s, loss=0.0819]Epoch 1 [Train]:  43%|████▎     | 46/107 [00:54<00:49,  1.23it/s, loss=0.0735]Epoch 1 [Train]:  44%|████▍     | 47/107 [00:54<00:48,  1.23it/s, loss=0.0735]Epoch 1 [Train]:  44%|████▍     | 47/107 [00:54<00:48,  1.23it/s, loss=0.0766]Epoch 1 [Train]:  45%|████▍     | 48/107 [00:54<00:48,  1.23it/s, loss=0.0766]Epoch 1 [Train]:  45%|████▍     | 48/107 [00:55<00:48,  1.23it/s, loss=0.0791]Epoch 1 [Train]:  46%|████▌     | 49/107 [00:55<00:47,  1.23it/s, loss=0.0791]Epoch 1 [Train]:  46%|████▌     | 49/107 [00:56<00:47,  1.23it/s, loss=0.0756]Epoch 1 [Train]:  47%|████▋     | 50/107 [00:56<00:46,  1.23it/s, loss=0.0756]Epoch 1 [Train]:  47%|████▋     | 50/107 [00:57<00:46,  1.23it/s, loss=0.0812]Epoch 1 [Train]:  48%|████▊     | 51/107 [00:57<00:45,  1.23it/s, loss=0.0812]Epoch 1 [Train]:  48%|████▊     | 51/107 [00:58<00:45,  1.23it/s, loss=0.0802]Epoch 1 [Train]:  49%|████▊     | 52/107 [00:58<00:44,  1.22it/s, loss=0.0802]Epoch 1 [Train]:  49%|████▊     | 52/107 [00:59<00:44,  1.22it/s, loss=0.0662]Epoch 1 [Train]:  50%|████▉     | 53/107 [00:59<00:44,  1.22it/s, loss=0.0662]Epoch 1 [Train]:  50%|████▉     | 53/107 [00:59<00:44,  1.22it/s, loss=0.0722]Epoch 1 [Train]:  50%|█████     | 54/107 [00:59<00:43,  1.22it/s, loss=0.0722]Epoch 1 [Train]:  50%|█████     | 54/107 [01:00<00:43,  1.22it/s, loss=0.0814]Epoch 1 [Train]:  51%|█████▏    | 55/107 [01:00<00:42,  1.22it/s, loss=0.0814]Epoch 1 [Train]:  51%|█████▏    | 55/107 [01:01<00:42,  1.22it/s, loss=0.0725]Epoch 1 [Train]:  52%|█████▏    | 56/107 [01:01<00:41,  1.23it/s, loss=0.0725]Epoch 1 [Train]:  52%|█████▏    | 56/107 [01:02<00:41,  1.23it/s, loss=0.0750]Epoch 1 [Train]:  53%|█████▎    | 57/107 [01:02<00:40,  1.23it/s, loss=0.0750]Epoch 1 [Train]:  53%|█████▎    | 57/107 [01:03<00:40,  1.23it/s, loss=0.0811]Epoch 1 [Train]:  54%|█████▍    | 58/107 [01:03<00:39,  1.23it/s, loss=0.0811]Epoch 1 [Train]:  54%|█████▍    | 58/107 [01:03<00:39,  1.23it/s, loss=0.0700]Epoch 1 [Train]:  55%|█████▌    | 59/107 [01:03<00:38,  1.24it/s, loss=0.0700]

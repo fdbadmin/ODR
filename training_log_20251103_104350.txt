@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/fdb/VSCode/ODR/src/train.py", line 16, in <module>
-    from config import LABEL_COLUMNS, RANDOM_SEED
-ModuleNotFoundError: No module named 'config'

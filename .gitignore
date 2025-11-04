@@ -88,3 +88,6 @@ notebooks/evaluation/
 # Training logs
 training_log_*.txt
 preprocessing_*.log
+
+# Organized log directory
+logs/
