@@ -231,13 +231,17 @@ def main():
     
     # Load data
     print("Loading data...")
-    data_dir = Path('preprocessed_data')
+    # Use Phase 4C data (RGB, 384x384)
+    data_dir = Path('preprocessed_data_phase4c')
     train_images = np.load(data_dir / 'train_images.npy')
     train_labels = np.load(data_dir / 'train_labels.npy')
     val_images = np.load(data_dir / 'val_images.npy')
     val_labels = np.load(data_dir / 'val_labels.npy')
-    print(f"Train: {train_images.shape[0]} images")
-    print(f"Val: {val_images.shape[0]} images\n")
+    
+    # Detect image size from data
+    image_size = train_images.shape[1]  # Should be 384 for Phase 4C
+    print(f"Train: {train_images.shape[0]} images at {image_size}x{image_size}")
+    print(f"Val: {val_images.shape[0]} images at {image_size}x{image_size}\n")
     
     # Class weights
     class_weights = calculate_class_weights(train_labels)
@@ -254,11 +258,11 @@ def main():
         val_transform, _ = None, None
     else:
         train_transform, batch_aug = get_augmentation_policy(
-            mode='train', image_size=224,
+            mode='train', image_size=image_size,
             use_mixup=args.use_mixup,
             use_cutmix=args.use_cutmix
         )
-        val_transform, _ = get_augmentation_policy(mode='val', image_size=224)
+        val_transform, _ = get_augmentation_policy(mode='val', image_size=image_size)
     
     # Create datasets
     train_dataset = RetinalDataset(train_images, train_labels, transform=train_transform)
@@ -272,8 +276,51 @@ def main():
         replacement=True
     )
     
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler, num_workers=0)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    # M5 Optimized DataLoader settings for Phase 4C (384x384 images)
+    import os
+    num_workers = int(os.environ.get('M5_NUM_WORKERS', '4'))  # Default to 4 P-cores
+    persistent_workers = os.environ.get('M5_PERSISTENT_WORKERS', '1') == '1'
+    pin_memory = os.environ.get('M5_PIN_MEMORY', '1') == '1'
+    prefetch_factor = int(os.environ.get('M5_PREFETCH_FACTOR', '2'))
+    
+    # Adjust batch size for larger images if not specified
+    if image_size > 224 and args.batch_size == 64:
+        # Auto-reduce batch size for 384x384 images
+        original_batch = args.batch_size
+        args.batch_size = 32
+        print(f"NOTE: Auto-reduced batch size from {original_batch} to {args.batch_size} for {image_size}x{image_size} images")
+        print(f"      (Larger images require more GPU memory)\n")
+    
+    # Fix for num_workers=0: can't use persistent_workers or prefetch_factor
+    if num_workers == 0:
+        persistent_workers = False
+        prefetch_factor = None
+    
+    print(f"M5 DataLoader Configuration:")
+    print(f"  Batch size: {args.batch_size}")
+    print(f"  Num workers: {num_workers}")
+    print(f"  Persistent workers: {persistent_workers}")
+    print(f"  Pin memory: {pin_memory}")
+    print(f"  Prefetch factor: {prefetch_factor}\n")
+    
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        sampler=sampler, 
+        num_workers=num_workers,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
+        pin_memory=pin_memory,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=False, 
+        num_workers=num_workers,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
+        pin_memory=pin_memory,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None
+    )
     
     # Load model
     print(f"Loading {args.model} model...")
