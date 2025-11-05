@@ -14,6 +14,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from sklearn.metrics import f1_score
 import matplotlib.pyplot as plt
 from datetime import datetime
+from tqdm import tqdm
 
 # Add project root
 project_root = Path(__file__).parent.parent
@@ -107,7 +108,9 @@ def train_epoch(model, train_loader, criterion, optimizer, device, class_weights
     all_preds = []
     all_labels = []
     
-    for batch_idx, (images, labels) in enumerate(train_loader):
+    # Add progress bar
+    pbar = tqdm(train_loader, desc='Training', leave=False)
+    for batch_idx, (images, labels) in enumerate(pbar):
         images = images.to(device)
         labels = labels.to(device)
         
@@ -132,12 +135,18 @@ def train_epoch(model, train_loader, criterion, optimizer, device, class_weights
         preds = torch.sigmoid(outputs).cpu().detach().numpy()
         all_preds.append(preds)
         all_labels.append(labels.cpu().numpy())
+        
+        # Update progress bar
+        pbar.set_postfix({'loss': f'{total_loss.item():.4f}'})
     
     all_preds = np.vstack(all_preds)
     all_labels = np.vstack(all_labels)
     all_preds_binary = (all_preds > 0.5).astype(int)
     
-    f1 = f1_score(all_labels, all_preds_binary, average='macro', zero_division=0)
+    # Round labels in case MixUp/CutMix was used (labels may be continuous)
+    all_labels_binary = (all_labels > 0.5).astype(int)
+    
+    f1 = f1_score(all_labels_binary, all_preds_binary, average='macro', zero_division=0)
     avg_loss = running_loss / len(train_loader)
     
     return avg_loss, f1
@@ -151,7 +160,9 @@ def validate(model, val_loader, criterion, device, class_weights):
     all_labels = []
     
     with torch.no_grad():
-        for images, labels in val_loader:
+        # Add progress bar
+        pbar = tqdm(val_loader, desc='Validation', leave=False)
+        for images, labels in pbar:
             images = images.to(device)
             labels = labels.to(device)
             
@@ -166,6 +177,9 @@ def validate(model, val_loader, criterion, device, class_weights):
             preds = torch.sigmoid(outputs).cpu().numpy()
             all_preds.append(preds)
             all_labels.append(labels.cpu().numpy())
+            
+            # Update progress bar
+            pbar.set_postfix({'loss': f'{total_loss.item():.4f}'})
     
     all_preds = np.vstack(all_preds)
     all_labels = np.vstack(all_labels)
@@ -289,9 +303,10 @@ def main():
     best_epoch = 0
     
     print("Starting training...\n")
-    for epoch in range(args.epochs):
-        print(f"Epoch {epoch+1}/{args.epochs}")
-        print("-" * 50)
+    # Add epoch progress bar
+    epoch_pbar = tqdm(range(args.epochs), desc='Epochs', position=0)
+    for epoch in epoch_pbar:
+        epoch_pbar.set_description(f"Epoch {epoch+1}/{args.epochs}")
         
         train_loss, train_f1 = train_epoch(
             model, train_loader, criterion, optimizer, device, class_weights_tensor, batch_aug
@@ -308,9 +323,18 @@ def main():
         history['val_f1'].append(val_f1)
         history['per_class_f1'].append(per_class_f1)
         
-        print(f"Train Loss: {train_loss:.4f} | Train F1: {train_f1:.4f}")
-        print(f"Val Loss:   {val_loss:.4f} | Val F1:   {val_f1:.4f}")
-        print(f"Per-class F1: {' '.join([f'{f1:.3f}' for f1 in per_class_f1])}")
+        # Update progress bar with metrics
+        epoch_pbar.set_postfix({
+            'train_f1': f'{train_f1:.4f}',
+            'val_f1': f'{val_f1:.4f}',
+            'best': f'{best_val_f1:.4f}'
+        })
+        
+        # Print detailed results
+        tqdm.write(f"\nEpoch {epoch+1}/{args.epochs} Results:")
+        tqdm.write(f"  Train Loss: {train_loss:.4f} | Train F1: {train_f1:.4f}")
+        tqdm.write(f"  Val Loss:   {val_loss:.4f} | Val F1:   {val_f1:.4f}")
+        tqdm.write(f"  Per-class F1: {' '.join([f'{f1:.3f}' for f1 in per_class_f1])}")
         
         if val_f1 > best_val_f1:
             best_val_f1 = val_f1
@@ -327,9 +351,9 @@ def main():
                 'args': vars(args)
             }, save_path)
             
-            print(f"✓ New best model saved (F1: {val_f1:.4f})")
-        
-        print()
+            tqdm.write(f"  ✓ New best model saved (F1: {val_f1:.4f})\n")
+        else:
+            tqdm.write("")
     
     print(f"\n{'='*80}")
     print(f"Training Complete!")
