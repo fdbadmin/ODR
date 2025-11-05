@@ -2,9 +2,15 @@
 Enhanced data preprocessing with advanced augmentation techniques.
 Replaces basic data_preprocessing.py with state-of-the-art methods.
 """
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 import pandas as pd
 import numpy as np
-from pathlib import Path
 from typing import Tuple, Optional, List
 import cv2
 from sklearn.model_selection import train_test_split
