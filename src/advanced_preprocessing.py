@@ -26,7 +26,7 @@ class RetinalImagePreprocessor:
                  target_size: Tuple[int, int] = (224, 224),
                  use_green_channel: bool = True,
                  apply_illumination_correction: bool = True,
-                 apply_vessel_enhancement: bool = False,
+                 apply_vessel_enhancement: bool = True,  # PHASE 4B: ENABLED for better vessel detection
                  clahe_clip_limit: float = 3.0,
                  clahe_grid_size: Tuple[int, int] = (8, 8)):
         """
