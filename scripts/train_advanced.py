@@ -101,8 +101,9 @@ def get_sample_weights(labels, class_weights):
     return sample_weights
 
 
-def train_epoch(model, train_loader, criterion, optimizer, device, class_weights, batch_aug=None):
-    """Train for one epoch."""
+def train_epoch(model, train_loader, criterion, optimizer, device, class_weights, batch_aug=None, 
+                scaler=None, grad_accum_steps=1, grad_clip=1.0):
+    """Train for one epoch with AMP and gradient accumulation support."""
     model.train()
     running_loss = 0.0
     all_preds = []
@@ -110,50 +111,100 @@ def train_epoch(model, train_loader, criterion, optimizer, device, class_weights
     
     # Add progress bar
     pbar = tqdm(train_loader, desc='Training', leave=False)
+    optimizer.zero_grad()
+    
     for batch_idx, (images, labels) in enumerate(pbar):
-        images = images.to(device)
-        labels = labels.to(device)
+        images, labels = images.to(device), labels.to(device)
         
-        # Apply batch augmentation (MixUp/CutMix) if available
-        if batch_aug is not None and model.training:
+        # Apply batch augmentation if provided (MixUp/CutMix)
+        if batch_aug is not None:
             images, labels = batch_aug(images, labels)
         
-        optimizer.zero_grad()
-        outputs = model(images)
+        # Mixed precision forward pass
+        if scaler is not None:
+            with torch.amp.autocast(device_type='mps' if device.type == 'mps' else 'cuda', dtype=torch.float16):
+                outputs = model(images)
+                
+                # Combined loss: 70% FocalLoss + 30% Weighted BCE
+                focal_loss = criterion(outputs, labels)
+                bce_loss = nn.functional.binary_cross_entropy_with_logits(
+                    outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
+                )
+                loss = 0.7 * focal_loss + 0.3 * bce_loss
+                
+                # Scale loss for gradient accumulation
+                loss = loss / grad_accum_steps
+        else:
+            # Regular forward pass (FP32)
+            outputs = model(images)
+            
+            # Combined loss
+            focal_loss = criterion(outputs, labels)
+            bce_loss = nn.functional.binary_cross_entropy_with_logits(
+                outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
+            )
+            loss = 0.7 * focal_loss + 0.3 * bce_loss
+            loss = loss / grad_accum_steps
         
-        # Calculate loss
-        loss = criterion(outputs, labels)
-        weighted_bce = nn.functional.binary_cross_entropy_with_logits(
-            outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
-        )
-        total_loss = 0.7 * loss + 0.3 * weighted_bce
+        # Backward pass
+        if scaler is not None:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
         
-        total_loss.backward()
-        optimizer.step()
+        # Update weights every grad_accum_steps
+        if (batch_idx + 1) % grad_accum_steps == 0:
+            if scaler is not None:
+                # Gradient clipping (unscale first for AMP)
+                if grad_clip > 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                # Gradient clipping (FP32)
+                if grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                
+                optimizer.step()
+            
+            optimizer.zero_grad()
         
-        running_loss += total_loss.item()
-        preds = torch.sigmoid(outputs).cpu().detach().numpy()
+        running_loss += loss.item() * grad_accum_steps
+        
+        # Collect predictions
+        preds = torch.sigmoid(outputs).detach().cpu().numpy()
         all_preds.append(preds)
         all_labels.append(labels.cpu().numpy())
         
-        # Update progress bar
-        pbar.set_postfix({'loss': f'{total_loss.item():.4f}'})
+        pbar.set_postfix({'loss': f'{loss.item() * grad_accum_steps:.4f}'})
+    
+    # Handle any remaining gradients
+    if len(train_loader) % grad_accum_steps != 0:
+        if scaler is not None:
+            if grad_clip > 0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            if grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+        optimizer.zero_grad()
     
     all_preds = np.vstack(all_preds)
     all_labels = np.vstack(all_labels)
-    all_preds_binary = (all_preds > 0.5).astype(int)
     
-    # Round labels in case MixUp/CutMix was used (labels may be continuous)
-    all_labels_binary = (all_labels > 0.5).astype(int)
-    
-    f1 = f1_score(all_labels_binary, all_preds_binary, average='macro', zero_division=0)
     avg_loss = running_loss / len(train_loader)
+    f1 = f1_score(all_labels, (all_preds > 0.5).astype(int), average='macro', zero_division=0)
     
     return avg_loss, f1
 
 
-def validate(model, val_loader, criterion, device, class_weights):
-    """Validate the model."""
+def validate(model, val_loader, criterion, device, class_weights, scaler=None):
+    """Validate the model with AMP support."""
     model.eval()
     running_loss = 0.0
     all_preds = []
@@ -166,12 +217,22 @@ def validate(model, val_loader, criterion, device, class_weights):
             images = images.to(device)
             labels = labels.to(device)
             
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            weighted_bce = nn.functional.binary_cross_entropy_with_logits(
-                outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
-            )
-            total_loss = 0.7 * loss + 0.3 * weighted_bce
+            # Mixed precision inference
+            if scaler is not None:
+                with torch.amp.autocast(device_type='mps' if device.type == 'mps' else 'cuda', dtype=torch.float16):
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                    weighted_bce = nn.functional.binary_cross_entropy_with_logits(
+                        outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
+                    )
+                    total_loss = 0.7 * loss + 0.3 * weighted_bce
+            else:
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                weighted_bce = nn.functional.binary_cross_entropy_with_logits(
+                    outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
+                )
+                total_loss = 0.7 * loss + 0.3 * weighted_bce
             
             running_loss += total_loss.item()
             preds = torch.sigmoid(outputs).cpu().numpy()
@@ -204,6 +265,10 @@ def main():
     parser.add_argument('--use-mixup', action='store_true', help='Use MixUp augmentation')
     parser.add_argument('--use-cutmix', action='store_true', help='Use CutMix augmentation')
     parser.add_argument('--no-augmentation', action='store_true', help='Disable augmentation')
+    parser.add_argument('--grad-accum-steps', type=int, default=1, help='Gradient accumulation steps (default: 1)')
+    parser.add_argument('--use-amp', action='store_true', help='Use Automatic Mixed Precision (AMP)')
+    parser.add_argument('--warmup-epochs', type=int, default=5, help='Learning rate warmup epochs (default: 5)')
+    parser.add_argument('--grad-clip', type=float, default=1.0, help='Gradient clipping max norm (default: 1.0, 0 to disable)')
     
     args = parser.parse_args()
     
@@ -342,7 +407,44 @@ def main():
     # Training setup
     criterion = FocalLoss(alpha=0.25, gamma=2.0)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    
+    # Learning rate scheduler with warmup
+    def lr_lambda(epoch):
+        if epoch < args.warmup_epochs:
+            # Linear warmup
+            return (epoch + 1) / args.warmup_epochs
+        else:
+            # Cosine annealing after warmup
+            progress = (epoch - args.warmup_epochs) / (args.epochs - args.warmup_epochs)
+            return 0.5 * (1.0 + np.cos(np.pi * progress))
+    
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    
+    # Initialize AMP scaler if requested
+    scaler = None
+    if args.use_amp:
+        scaler = torch.amp.GradScaler('mps' if device.type == 'mps' else 'cuda')
+        print(f"✓ Mixed Precision (AMP) enabled for {device.type.upper()}")
+    
+    # Determine gradient accumulation steps
+    grad_accum_steps = args.grad_accum_steps
+    # Skip grad accumulation for EfficientNetV2 (uses BatchNorm)
+    if 'efficientnet' in args.model.lower() and grad_accum_steps > 1:
+        print(f"⚠️  Gradient accumulation disabled for {args.model} (uses BatchNorm)")
+        grad_accum_steps = 1
+    
+    # Print optimization settings
+    print(f"\n{'='*60}")
+    print("Training Optimizations:")
+    print(f"{'='*60}")
+    print(f"  AMP (Mixed Precision): {'✓ Enabled' if args.use_amp else '✗ Disabled'}")
+    print(f"  Gradient Accumulation: {'✓ ' + str(grad_accum_steps) + ' steps' if grad_accum_steps > 1 else '✗ Disabled'}")
+    if grad_accum_steps > 1:
+        effective_batch = args.batch_size * grad_accum_steps
+        print(f"    → Effective batch size: {effective_batch}")
+    print(f"  LR Warmup: {'✓ ' + str(args.warmup_epochs) + ' epochs' if args.warmup_epochs > 0 else '✗ Disabled'}")
+    print(f"  Gradient Clipping: {'✓ max_norm=' + str(args.grad_clip) if args.grad_clip > 0 else '✗ Disabled'}")
+    print(f"{'='*60}\n")
     
     # Training loop
     history = {'train_loss': [], 'train_f1': [], 'val_loss': [], 'val_f1': [], 'per_class_f1': []}
@@ -356,10 +458,11 @@ def main():
         epoch_pbar.set_description(f"Epoch {epoch+1}/{args.epochs}")
         
         train_loss, train_f1 = train_epoch(
-            model, train_loader, criterion, optimizer, device, class_weights_tensor, batch_aug
+            model, train_loader, criterion, optimizer, device, class_weights_tensor, batch_aug,
+            scaler=scaler, grad_accum_steps=grad_accum_steps, grad_clip=args.grad_clip
         )
         val_loss, val_f1, per_class_f1 = validate(
-            model, val_loader, criterion, device, class_weights_tensor
+            model, val_loader, criterion, device, class_weights_tensor, scaler=scaler
         )
         
         scheduler.step()
