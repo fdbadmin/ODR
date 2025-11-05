@@ -107,36 +107,41 @@ class Phase4CPreprocessor:
     
     def enhance_vessels_single_channel(self, img: np.ndarray) -> np.ndarray:
         """
-        Enhance blood vessel visibility using morphological operations.
-        Uses smaller 7×7 kernel for better fine detail preservation.
+        Multi-scale vessel enhancement using morphological operations.
+        Uses 5×5, 7×7, and 9×9 kernels to capture vessels of different sizes.
         
         Args:
             img: Input grayscale channel
             
         Returns:
-            Channel with enhanced vessel contrast
+            Channel with multi-scale enhanced vessel contrast
         """
-        # Create elliptical kernel (smaller for Phase 4C)
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, 
-            (self.vessel_kernel_size, self.vessel_kernel_size)
-        )
+        # Small vessels (capillaries, microaneurysms)
+        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        blackhat_small = cv2.morphologyEx(img, cv2.MORPH_BLACKHAT, kernel_small)
         
-        # Top-hat: enhance bright structures
-        tophat = cv2.morphologyEx(img, cv2.MORPH_TOPHAT, kernel)
+        # Medium vessels (retinal arteries/veins)
+        kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        blackhat_medium = cv2.morphologyEx(img, cv2.MORPH_BLACKHAT, kernel_medium)
         
-        # Black-hat: enhance dark structures (vessels)
-        blackhat = cv2.morphologyEx(img, cv2.MORPH_BLACKHAT, kernel)
+        # Large vessels (optic disc region)
+        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        blackhat_large = cv2.morphologyEx(img, cv2.MORPH_BLACKHAT, kernel_large)
         
-        # Combine enhancements
-        enhanced = cv2.add(img, tophat)
-        enhanced = cv2.subtract(enhanced, blackhat)
+        # Combine with weights (favor medium scale, but include all)
+        vessels_combined = (0.25 * blackhat_small.astype(np.float32) + 
+                           0.5 * blackhat_medium.astype(np.float32) + 
+                           0.25 * blackhat_large.astype(np.float32))
+        
+        # Enhance vessels (subtract dark structures)
+        enhanced = cv2.subtract(img, vessels_combined.astype(np.uint8))
         
         return enhanced
     
     def apply_clahe_single_channel(self, img: np.ndarray) -> np.ndarray:
         """
-        Apply CLAHE to a single channel.
+        Apply adaptive CLAHE to a single channel.
+        Adjusts clip limit based on image brightness for better enhancement.
         
         Args:
             img: Input grayscale channel
@@ -144,8 +149,18 @@ class Phase4CPreprocessor:
         Returns:
             CLAHE-enhanced channel
         """
+        # Adaptive clip limit based on image brightness
+        mean_brightness = img.mean()
+        
+        if mean_brightness < 60:  # Dark image (severe DR, cataracts)
+            clip_limit = 4.0  # More enhancement needed
+        elif mean_brightness > 140:  # Bright image (normal, early AMD)
+            clip_limit = 2.0  # Less enhancement to avoid over-brightening
+        else:
+            clip_limit = 3.0  # Standard enhancement
+        
         clahe = cv2.createCLAHE(
-            clipLimit=self.clahe_clip_limit,
+            clipLimit=clip_limit,
             tileGridSize=self.clahe_grid_size
         )
         return clahe.apply(img)
@@ -198,9 +213,15 @@ class Phase4CPreprocessor:
         r_clahe = self.apply_clahe_single_channel(r_corrected)
         r_final = cv2.bilateralFilter(r_clahe, d=5, sigmaColor=50, sigmaSpace=50)
         
-        # GREEN channel: Illumination + VESSEL ENHANCEMENT + CLAHE + Denoise
+        # GREEN channel: Illumination + MULTI-SCALE VESSEL ENHANCEMENT + DRUSEN ENHANCEMENT + CLAHE + Denoise
         g_corrected = self.correct_illumination(g_channel)
-        g_vessels = self.enhance_vessels_single_channel(g_corrected)
+        g_vessels = self.enhance_vessels_single_channel(g_corrected)  # Multi-scale vessels
+        
+        # AMD drusen enhancement (bright yellow deposits - use top-hat)
+        kernel_drusen = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        drusen_enhanced = cv2.morphologyEx(g_vessels, cv2.MORPH_TOPHAT, kernel_drusen)
+        g_vessels = cv2.add(g_vessels, drusen_enhanced)
+        
         g_clahe = self.apply_clahe_single_channel(g_vessels)
         g_final = cv2.bilateralFilter(g_clahe, d=5, sigmaColor=50, sigmaSpace=50)
         

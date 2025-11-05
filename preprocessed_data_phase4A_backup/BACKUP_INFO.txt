@@ -1,4 +1,0 @@
-Backup created: 2025-11-05 01:28:06.037157
-Phase: 4A (threshold optimization, no vessel enhancement)
-F1 Score: 64.63%
-Models: ConvNeXt Tiny + ViT Small + EfficientNetV2 Small

@@ -102,8 +102,8 @@ def get_sample_weights(labels, class_weights):
 
 
 def train_epoch(model, train_loader, criterion, optimizer, device, class_weights, batch_aug=None, 
-                scaler=None, grad_accum_steps=1, grad_clip=1.0):
-    """Train for one epoch with AMP and gradient accumulation support."""
+                scaler=None, grad_accum_steps=1, grad_clip=1.0, scheduler=None, label_smoothing=0.1):
+    """Train for one epoch with AMP, gradient accumulation, and label smoothing support."""
     model.train()
     running_loss = 0.0
     all_preds = []
@@ -120,15 +120,21 @@ def train_epoch(model, train_loader, criterion, optimizer, device, class_weights
         if batch_aug is not None:
             images, labels = batch_aug(images, labels)
         
+        # Apply label smoothing: 1 → 0.95, 0 → 0.05
+        if label_smoothing > 0:
+            labels_smoothed = labels * (1 - label_smoothing) + label_smoothing * 0.5
+        else:
+            labels_smoothed = labels
+        
         # Mixed precision forward pass
         if scaler is not None:
             with torch.amp.autocast(device_type='mps' if device.type == 'mps' else 'cuda', dtype=torch.float16):
                 outputs = model(images)
                 
                 # Combined loss: 70% FocalLoss + 30% Weighted BCE
-                focal_loss = criterion(outputs, labels)
+                focal_loss = criterion(outputs, labels_smoothed)
                 bce_loss = nn.functional.binary_cross_entropy_with_logits(
-                    outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
+                    outputs, labels_smoothed, pos_weight=class_weights.to(device), reduction='mean'
                 )
                 loss = 0.7 * focal_loss + 0.3 * bce_loss
                 
@@ -139,9 +145,9 @@ def train_epoch(model, train_loader, criterion, optimizer, device, class_weights
             outputs = model(images)
             
             # Combined loss
-            focal_loss = criterion(outputs, labels)
+            focal_loss = criterion(outputs, labels_smoothed)
             bce_loss = nn.functional.binary_cross_entropy_with_logits(
-                outputs, labels, pos_weight=class_weights.to(device), reduction='mean'
+                outputs, labels_smoothed, pos_weight=class_weights.to(device), reduction='mean'
             )
             loss = 0.7 * focal_loss + 0.3 * bce_loss
             loss = loss / grad_accum_steps
@@ -170,13 +176,17 @@ def train_epoch(model, train_loader, criterion, optimizer, device, class_weights
                 optimizer.step()
             
             optimizer.zero_grad()
+            
+            # Step scheduler after each batch (for OneCycleLR)
+            if scheduler is not None:
+                scheduler.step()
         
         running_loss += loss.item() * grad_accum_steps
         
-        # Collect predictions
+        # Collect predictions (ensure proper numpy conversion)
         preds = torch.sigmoid(outputs).detach().cpu().numpy()
         all_preds.append(preds)
-        all_labels.append(labels.cpu().numpy())
+        all_labels.append(labels.detach().cpu().numpy())
         
         pbar.set_postfix({'loss': f'{loss.item() * grad_accum_steps:.4f}'})
     
@@ -193,12 +203,19 @@ def train_epoch(model, train_loader, criterion, optimizer, device, class_weights
                 torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
         optimizer.zero_grad()
+        
+        # Step scheduler for remaining batch
+        if scheduler is not None:
+            scheduler.step()
     
-    all_preds = np.vstack(all_preds)
-    all_labels = np.vstack(all_labels)
+    # Concatenate all predictions and labels
+    all_preds = np.concatenate(all_preds, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
     
     avg_loss = running_loss / len(train_loader)
-    f1 = f1_score(all_labels, (all_preds > 0.5).astype(int), average='macro', zero_division=0)
+    all_preds_binary = (all_preds > 0.5).astype(np.int32)
+    all_labels_int = all_labels.astype(np.int32)
+    f1 = f1_score(all_labels_int, all_preds_binary, average='macro', zero_division=0)
     
     return avg_loss, f1
 
@@ -235,20 +252,22 @@ def validate(model, val_loader, criterion, device, class_weights, scaler=None):
                 total_loss = 0.7 * loss + 0.3 * weighted_bce
             
             running_loss += total_loss.item()
-            preds = torch.sigmoid(outputs).cpu().numpy()
+            preds = torch.sigmoid(outputs).detach().cpu().numpy()
             all_preds.append(preds)
-            all_labels.append(labels.cpu().numpy())
+            all_labels.append(labels.detach().cpu().numpy())
             
             # Update progress bar
             pbar.set_postfix({'loss': f'{total_loss.item():.4f}'})
     
-    all_preds = np.vstack(all_preds)
-    all_labels = np.vstack(all_labels)
-    all_preds_binary = (all_preds > 0.5).astype(int)
+    # Concatenate all predictions and labels
+    all_preds = np.concatenate(all_preds, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+    all_preds_binary = (all_preds > 0.5).astype(np.int32)
+    all_labels_int = all_labels.astype(np.int32)
     
-    f1 = f1_score(all_labels, all_preds_binary, average='macro', zero_division=0)
+    f1 = f1_score(all_labels_int, all_preds_binary, average='macro', zero_division=0)
     avg_loss = running_loss / len(val_loader)
-    per_class_f1 = f1_score(all_labels, all_preds_binary, average=None, zero_division=0)
+    per_class_f1 = f1_score(all_labels_int, all_preds_binary, average=None, zero_division=0)
     
     return avg_loss, f1, per_class_f1
 
@@ -345,7 +364,7 @@ def main():
     import os
     num_workers = int(os.environ.get('M5_NUM_WORKERS', '4'))  # Default to 4 P-cores
     persistent_workers = os.environ.get('M5_PERSISTENT_WORKERS', '1') == '1'
-    pin_memory = os.environ.get('M5_PIN_MEMORY', '1') == '1'
+    pin_memory = False  # MPS doesn't benefit from pinned memory (unified memory architecture)
     prefetch_factor = int(os.environ.get('M5_PREFETCH_FACTOR', '2'))
     
     # Adjust batch size for larger images if not specified
@@ -408,17 +427,27 @@ def main():
     criterion = FocalLoss(alpha=0.25, gamma=2.0)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-5)
     
-    # Learning rate scheduler with warmup
-    def lr_lambda(epoch):
-        if epoch < args.warmup_epochs:
-            # Linear warmup
-            return (epoch + 1) / args.warmup_epochs
-        else:
-            # Cosine annealing after warmup
-            progress = (epoch - args.warmup_epochs) / (args.epochs - args.warmup_epochs)
-            return 0.5 * (1.0 + np.cos(np.pi * progress))
+    # OneCycleLR scheduler - better than cosine annealing with warmup
+    # Replaces LambdaLR for faster convergence and better optima
+    steps_per_epoch = len(train_loader) // max(1, args.grad_accum_steps)
     
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    # Skip grad accumulation for EfficientNetV2 (uses BatchNorm)
+    grad_accum_steps = args.grad_accum_steps
+    if 'efficientnet' in args.model.lower() and grad_accum_steps > 1:
+        print(f"⚠️  Gradient accumulation disabled for {args.model} (uses BatchNorm)")
+        grad_accum_steps = 1
+        steps_per_epoch = len(train_loader)
+    
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=args.lr * 10,  # Peak at 10x base learning rate
+        epochs=args.epochs,
+        steps_per_epoch=steps_per_epoch,
+        pct_start=0.3,  # 30% of training is warmup phase
+        anneal_strategy='cos',  # Cosine annealing
+        div_factor=25.0,  # Initial LR = max_lr / 25
+        final_div_factor=1000.0  # Final LR = max_lr / 1000
+    )
     
     # Initialize AMP scaler if requested
     scaler = None
@@ -426,23 +455,17 @@ def main():
         scaler = torch.amp.GradScaler('mps' if device.type == 'mps' else 'cuda')
         print(f"✓ Mixed Precision (AMP) enabled for {device.type.upper()}")
     
-    # Determine gradient accumulation steps
-    grad_accum_steps = args.grad_accum_steps
-    # Skip grad accumulation for EfficientNetV2 (uses BatchNorm)
-    if 'efficientnet' in args.model.lower() and grad_accum_steps > 1:
-        print(f"⚠️  Gradient accumulation disabled for {args.model} (uses BatchNorm)")
-        grad_accum_steps = 1
-    
     # Print optimization settings
     print(f"\n{'='*60}")
     print("Training Optimizations:")
     print(f"{'='*60}")
+    print(f"  Scheduler: OneCycleLR (max_lr={args.lr * 10:.0e}, 30% warmup)")
+    print(f"  Label Smoothing: ✓ 0.1 (reduces overconfidence)")
     print(f"  AMP (Mixed Precision): {'✓ Enabled' if args.use_amp else '✗ Disabled'}")
     print(f"  Gradient Accumulation: {'✓ ' + str(grad_accum_steps) + ' steps' if grad_accum_steps > 1 else '✗ Disabled'}")
     if grad_accum_steps > 1:
         effective_batch = args.batch_size * grad_accum_steps
         print(f"    → Effective batch size: {effective_batch}")
-    print(f"  LR Warmup: {'✓ ' + str(args.warmup_epochs) + ' epochs' if args.warmup_epochs > 0 else '✗ Disabled'}")
     print(f"  Gradient Clipping: {'✓ max_norm=' + str(args.grad_clip) if args.grad_clip > 0 else '✗ Disabled'}")
     print(f"{'='*60}\n")
     
@@ -459,13 +482,12 @@ def main():
         
         train_loss, train_f1 = train_epoch(
             model, train_loader, criterion, optimizer, device, class_weights_tensor, batch_aug,
-            scaler=scaler, grad_accum_steps=grad_accum_steps, grad_clip=args.grad_clip
+            scaler=scaler, grad_accum_steps=grad_accum_steps, grad_clip=args.grad_clip, 
+            scheduler=scheduler, label_smoothing=0.1
         )
         val_loss, val_f1, per_class_f1 = validate(
             model, val_loader, criterion, device, class_weights_tensor, scaler=scaler
         )
-        
-        scheduler.step()
         
         history['train_loss'].append(train_loss)
         history['train_f1'].append(train_f1)

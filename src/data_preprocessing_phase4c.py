@@ -22,15 +22,103 @@ sys.path.insert(0, str(project_root))
 from src.phase4c_preprocessing import Phase4CPreprocessor
 
 
+def is_low_quality(diagnostic_keywords: str) -> bool:
+    """
+    Check if image is marked as low quality and should be excluded.
+    
+    Args:
+        diagnostic_keywords: String with comma-separated diagnostic terms
+        
+    Returns:
+        True if image should be excluded due to quality issues
+    """
+    if pd.isna(diagnostic_keywords):
+        return False
+    
+    keywords_lower = str(diagnostic_keywords).lower()
+    
+    # Quality exclusion keywords
+    quality_exclusions = [
+        'low image quality', 'low quality', 'poor quality', 
+        'image unclear', 'blur', 'artifact', 'unqualified'
+    ]
+    
+    return any(kw in keywords_lower for kw in quality_exclusions)
+
+
+def parse_eye_labels(diagnostic_keywords: str) -> np.ndarray:
+    """
+    Parse diagnostic keywords into per-eye 7-class labels using intelligent keyword matching.
+    Excludes Normal (N) from training labels - only diseases: D, G, C, A, H, M, O
+    
+    Args:
+        diagnostic_keywords: String with comma-separated diagnostic terms
+        
+    Returns:
+        7-element binary vector [D, G, C, A, H, M, O] (H included in output but should be 0)
+    """
+    if pd.isna(diagnostic_keywords):
+        return np.zeros(7, dtype=np.float32)
+    
+    keywords_lower = str(diagnostic_keywords).lower()
+    labels = np.zeros(7, dtype=np.float32)  # [D, G, C, A, H, M, O]
+    
+    # Diabetes (D) - index 0
+    if any(kw in keywords_lower for kw in [
+        'diabetic', 'retinopathy', 'proliferative', 'nonproliferative', 
+        'maculopathy', 'dme', 'diabetic macular edema'
+    ]):
+        labels[0] = 1
+    
+    # Glaucoma (G) - index 1
+    if any(kw in keywords_lower for kw in [
+        'glaucoma', 'suspicious glaucoma', 'disc suspicious'
+    ]):
+        labels[1] = 1
+    
+    # Cataract (C) - index 2
+    if any(kw in keywords_lower for kw in [
+        'cataract', 'lens opacity', 'nuclear cataract', 'cortical cataract'
+    ]):
+        labels[2] = 1
+    
+    # AMD (A) - index 3
+    if any(kw in keywords_lower for kw in [
+        'amd', 'macular degeneration', 'drusen', 'geographic atrophy', 'cnv'
+    ]):
+        labels[3] = 1
+    
+    # Hypertension (H) - index 4 - SHOULD BE ZERO (excluded from training)
+    # Kept in structure for compatibility but not trained
+    labels[4] = 0
+    
+    # Myopia (M) - index 5
+    if any(kw in keywords_lower for kw in [
+        'myopia', 'pathological myopia', 'high myopia', 'myopic'
+    ]):
+        labels[5] = 1
+    
+    # Other (O) - index 6
+    if any(kw in keywords_lower for kw in [
+        'epiretinal', 'myelinated', 'laser', 'vitreous', 'membrane',
+        'retinal vein occlusion', 'brvo', 'crvo', 'optic atrophy',
+        'retinitis', 'retinoschisis', 'pigmentosa', 'punctate', 'spots'
+    ]):
+        labels[6] = 1
+    
+    return labels
+
+
 def load_labels(data_path: str) -> Tuple[pd.DataFrame, List[str]]:
     """
-    Load and process ODIR-5K labels (7 classes, H removed).
+    Load and process ODIR-5K labels with INTELLIGENT PER-EYE labeling.
+    Parses diagnostic keywords to create accurate per-eye labels instead of patient-level aggregates.
     
     Args:
         data_path: Path to Excel/CSV file with labels
         
     Returns:
-        Tuple of (DataFrame, label_columns)
+        Tuple of (labels_dict, disease_columns)
     """
     # Handle both Excel and CSV formats
     if str(data_path).endswith('.xlsx'):
@@ -39,20 +127,34 @@ def load_labels(data_path: str) -> Tuple[pd.DataFrame, List[str]]:
         df = pd.read_csv(data_path)
     
     # Disease columns (7 classes - excluding Hypertension)
-    disease_cols = ['N', 'D', 'G', 'C', 'A', 'M', 'O']
+    disease_cols = ['D', 'G', 'C', 'A', 'H', 'M', 'O']
     
     labels = {}
+    excluded_count = 0
+    
     for _, row in df.iterrows():
         img_id = str(row['ID'])
         left_id = f"{img_id}_left"
         right_id = f"{img_id}_right"
         
-        # Get disease labels (0 or 1)
-        label_vector = row[disease_cols].values.astype(np.float32)
+        # Check quality for each eye separately
+        left_keywords = row['Left-Diagnostic Keywords']
+        right_keywords = row['Right-Diagnostic Keywords']
         
-        labels[left_id] = label_vector
-        labels[right_id] = label_vector
+        # Skip low quality images
+        if not is_low_quality(left_keywords):
+            left_label = parse_eye_labels(left_keywords)
+            labels[left_id] = left_label
+        else:
+            excluded_count += 1
+            
+        if not is_low_quality(right_keywords):
+            right_label = parse_eye_labels(right_keywords)
+            labels[right_id] = right_label
+        else:
+            excluded_count += 1
     
+    print(f"  Excluded {excluded_count} low-quality images")
     return labels
 
 
@@ -99,15 +201,20 @@ def preprocess_phase4c(num_workers: int = 4, chunksize: int = 150):
     """
     
     print("\n" + "="*80)
-    print("PHASE 4C: RGB COLOR PRESERVATION + VESSEL ENHANCEMENT")
+    print("PHASE 4C: RGB COLOR PRESERVATION + OPTIMIZED VESSEL ENHANCEMENT")
     print("="*80)
     print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("\nKey Features:")
     print("  ✓ RGB color preservation (RED, GREEN, BLUE channels)")
-    print("  ✓ Vessel enhancement on GREEN channel only")
-    print("  ✓ 7×7 kernel (optimized for fine details)")
+    print("  ✓ Multi-scale vessel enhancement (5×5, 7×7, 9×9 kernels)")
+    print("  ✓ AMD drusen enhancement (11×11 top-hat on GREEN)")
+    print("  ✓ Adaptive CLAHE (adjusts to image brightness)")
     print("  ✓ 384×384 resolution (up from 224×224)")
     print("  ✓ CLAHE + bilateral filtering per channel")
+    print("\nData Split Optimization:")
+    print("  ✓ Multi-label stratified split (ALL 7 classes)")
+    print("  ✓ 75/25 split (larger validation set)")
+    print("  ✓ Preserves disease co-occurrence patterns")
     print("\nM5 High-Memory Optimizations:")
     print(f"  ✓ Multiprocessing: {num_workers} workers (P-cores)")
     print(f"  ✓ Large batches: {chunksize} images per chunk")
@@ -190,16 +297,21 @@ def preprocess_phase4c(num_workers: int = 4, chunksize: int = 150):
     print(f"Labels shape: {labels_array.shape}")
     print(f"Memory usage: ~{images_array.nbytes / 1e9:.2f} GB")
     
-    # Split train/val (80/20)
-    from sklearn.model_selection import train_test_split
+    # Split train/val with multi-label stratification (75/25 for larger val set)
+    from iterstrat.ml_stratifiers import MultilabelStratifiedShuffleSplit
     
-    indices = np.arange(len(images_array))
-    train_idx, val_idx = train_test_split(
-        indices, 
-        test_size=0.2, 
-        random_state=42,
-        stratify=labels_array[:, 1]  # Stratify by diabetes (most common)
+    print("\nPerforming multi-label stratified split...")
+    print("  ✓ Stratifying by ALL 7 disease classes")
+    print("  ✓ Using 75/25 split (larger validation set for rare classes)")
+    print("  ✓ Preserving disease co-occurrence patterns")
+    
+    msss = MultilabelStratifiedShuffleSplit(
+        n_splits=1, 
+        test_size=0.25,  # 25% validation for larger sample size on rare classes
+        random_state=42
     )
+    
+    train_idx, val_idx = next(msss.split(images_array, labels_array))
     
     train_images = images_array[train_idx]
     train_labels = labels_array[train_idx]
@@ -241,10 +353,14 @@ def preprocess_phase4c(num_workers: int = 4, chunksize: int = 150):
     print("="*80)
     
     print("\nNext steps:")
-    print("  1. Update training script to use 'preprocessed_data_phase4c' directory")
-    print("  2. Run training: M5_NUM_WORKERS=4 python scripts/train_advanced.py --model convnext_tiny --epochs 50 --batch-size 32")
+    print("  1. Training optimizations applied:")
+    print("     • OneCycleLR scheduler (faster convergence)")
+    print("     • Label smoothing (0.1 - better calibration)")
+    print("     • Multi-scale vessel + drusen enhancement")
+    print("     • Adaptive CLAHE (brightness-aware)")
+    print("  2. Run training: M5_NUM_WORKERS=4 python scripts/train_advanced.py --model convnext_tiny --epochs 50 --batch-size 32 --use-mixup --use-amp --grad-accum-steps 2 --grad-clip 1.0")
     print("     (Note: Smaller batch size due to larger images)")
-    print("  3. Expected improvement: 5-10% F1 increase from RGB color + higher resolution")
+    print("  3. Expected improvement: +5-8% F1 from all optimizations combined")
 
 
 if __name__ == '__main__':
