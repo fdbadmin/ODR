@@ -46,65 +46,145 @@ def is_low_quality(diagnostic_keywords: str) -> bool:
     return any(kw in keywords_lower for kw in quality_exclusions)
 
 
-def parse_eye_labels(diagnostic_keywords: str) -> np.ndarray:
+def parse_intelligent_per_eye_labels(patient_labels: dict, diagnostic_keywords: str, eye_side: str) -> np.ndarray:
     """
-    Parse diagnostic keywords into per-eye 7-class labels using intelligent keyword matching.
-    Excludes Normal (N) from training labels - only diseases: D, G, C, A, H, M, O
+    INTELLIGENT PER-EYE LABELING: Combines patient-level labels with diagnostic keywords
+    to determine which diseases apply to which specific eye.
+    
+    Strategy:
+    1. Start with patient-level labels (which diseases the patient has)
+    2. Parse diagnostic keywords to determine which eye has which disease
+    3. If keywords explicitly mention "normal" for this eye, remove all disease labels
+    4. If keywords mention specific disease for this eye, ensure it's labeled
     
     Args:
-        diagnostic_keywords: String with comma-separated diagnostic terms
+        patient_labels: Dict with keys 'A', 'D', 'G', 'C', 'M', 'N', 'O' (patient-level)
+        diagnostic_keywords: String with comma-separated diagnostic terms for this eye
+        eye_side: 'left' or 'right'
         
     Returns:
-        7-element binary vector [D, G, C, A, H, M, O] (H included in output but should be 0)
+        7-element binary vector [AMD, Diabetes, Glaucoma, Cataract, Myopia, Normal, Other]
     """
     if pd.isna(diagnostic_keywords):
-        return np.zeros(7, dtype=np.float32)
+        # No keywords - use patient labels (assume symmetric)
+        labels = np.array([
+            patient_labels['A'],  # AMD
+            patient_labels['D'],  # Diabetes  
+            patient_labels['G'],  # Glaucoma
+            patient_labels['C'],  # Cataract
+            patient_labels['M'],  # Myopia
+            patient_labels['N'],  # Normal
+            patient_labels['O']   # Other
+        ], dtype=np.float32)
+        return labels
     
     keywords_lower = str(diagnostic_keywords).lower()
-    labels = np.zeros(7, dtype=np.float32)  # [D, G, C, A, H, M, O]
     
-    # Diabetes (D) - index 0
+    # Check if this eye is explicitly normal
+    is_normal_eye = ('normal fundus' in keywords_lower or 
+                     (keywords_lower.strip() == 'normal') or
+                     ('normal' in keywords_lower and not any(disease in keywords_lower for disease in [
+                         'diabetic', 'retinopathy', 'glaucoma', 'cataract', 'amd', 
+                         'macular degeneration', 'myopia', 'drusen', 'proliferative'
+                     ])))
+    
+    if is_normal_eye:
+        # This eye is explicitly normal - override patient labels
+        return np.array([0, 0, 0, 0, 0, 1, 0], dtype=np.float32)
+    
+    # Start with patient-level labels (diseases patient has somewhere)
+    labels = np.array([
+        patient_labels['A'],  # AMD
+        patient_labels['D'],  # Diabetes  
+        patient_labels['G'],  # Glaucoma
+        patient_labels['C'],  # Cataract
+        patient_labels['M'],  # Myopia
+        patient_labels['N'],  # Normal
+        patient_labels['O']   # Other
+    ], dtype=np.float32)
+    
+    # Refine with keyword detection for this specific eye
+    # If keyword mentions disease explicitly, ensure it's marked
+    
+    # AMD keywords
+    if any(kw in keywords_lower for kw in [
+        'amd', 'macular degeneration', 'drusen', 'geographic atrophy', 'cnv'
+    ]):
+        labels[0] = 1  # AMD
+        labels[5] = 0  # Not normal if disease present
+    
+    # Diabetes keywords
     if any(kw in keywords_lower for kw in [
         'diabetic', 'retinopathy', 'proliferative', 'nonproliferative', 
         'maculopathy', 'dme', 'diabetic macular edema'
     ]):
-        labels[0] = 1
+        labels[1] = 1  # Diabetes
+        labels[5] = 0  # Not normal
     
-    # Glaucoma (G) - index 1
+    # Glaucoma keywords
     if any(kw in keywords_lower for kw in [
         'glaucoma', 'suspicious glaucoma', 'disc suspicious'
     ]):
-        labels[1] = 1
+        labels[2] = 1  # Glaucoma
+        labels[5] = 0  # Not normal
     
-    # Cataract (C) - index 2
+    # Cataract keywords
     if any(kw in keywords_lower for kw in [
         'cataract', 'lens opacity', 'nuclear cataract', 'cortical cataract'
     ]):
-        labels[2] = 1
+        labels[3] = 1  # Cataract
+        labels[5] = 0  # Not normal
     
-    # AMD (A) - index 3
-    if any(kw in keywords_lower for kw in [
-        'amd', 'macular degeneration', 'drusen', 'geographic atrophy', 'cnv'
-    ]):
-        labels[3] = 1
-    
-    # Hypertension (H) - index 4 - SHOULD BE ZERO (excluded from training)
-    # Kept in structure for compatibility but not trained
-    labels[4] = 0
-    
-    # Myopia (M) - index 5
+    # Myopia keywords
     if any(kw in keywords_lower for kw in [
         'myopia', 'pathological myopia', 'high myopia', 'myopic'
     ]):
-        labels[5] = 1
+        labels[4] = 1  # Myopia
+        labels[5] = 0  # Not normal
     
-    # Other (O) - index 6
+    # Other diseases
     if any(kw in keywords_lower for kw in [
         'epiretinal', 'myelinated', 'laser', 'vitreous', 'membrane',
         'retinal vein occlusion', 'brvo', 'crvo', 'optic atrophy',
-        'retinitis', 'retinoschisis', 'pigmentosa', 'punctate', 'spots'
+        'retinitis', 'retinoschisis', 'pigmentosa', 'punctate', 'spots',
+        'hypertensive'
     ]):
-        labels[6] = 1
+        labels[6] = 1  # Other
+        labels[5] = 0  # Not normal
+    
+    # If patient has disease but this eye's keywords don't mention it,
+    # and keywords ARE specific (not empty), then remove that disease for this eye
+    has_specific_keywords = any(disease in keywords_lower for disease in [
+        'diabetic', 'retinopathy', 'glaucoma', 'cataract', 'amd', 
+        'macular degeneration', 'myopia', 'drusen', 'epiretinal',
+        'laser', 'vitreous', 'membrane'
+    ])
+    
+    if has_specific_keywords:
+        # Keywords are specific - if disease not mentioned, remove it for this eye
+        if patient_labels['A'] == 1 and labels[0] == 1:
+            if not any(kw in keywords_lower for kw in ['amd', 'macular degeneration', 'drusen']):
+                labels[0] = 0  # Patient has AMD, but not in this eye
+        
+        if patient_labels['D'] == 1 and labels[1] == 1:
+            if not any(kw in keywords_lower for kw in ['diabetic', 'retinopathy', 'maculopathy']):
+                labels[1] = 0  # Patient has diabetes, but not this eye
+        
+        if patient_labels['G'] == 1 and labels[2] == 1:
+            if not any(kw in keywords_lower for kw in ['glaucoma']):
+                labels[2] = 0  # Patient has glaucoma, but not this eye
+        
+        if patient_labels['C'] == 1 and labels[3] == 1:
+            if not any(kw in keywords_lower for kw in ['cataract', 'lens opacity']):
+                labels[3] = 0  # Patient has cataract, but not this eye
+        
+        if patient_labels['M'] == 1 and labels[4] == 1:
+            if not any(kw in keywords_lower for kw in ['myopia', 'myopic']):
+                labels[4] = 0  # Patient has myopia, but not this eye
+    
+    # Final check: if no diseases marked, set as normal
+    if labels[:5].sum() == 0 and labels[6] == 0:
+        labels[5] = 1
     
     return labels
 
@@ -112,7 +192,12 @@ def parse_eye_labels(diagnostic_keywords: str) -> np.ndarray:
 def load_labels(data_path: str) -> Tuple[pd.DataFrame, List[str]]:
     """
     Load and process ODIR-5K labels with INTELLIGENT PER-EYE labeling.
-    Parses diagnostic keywords to create accurate per-eye labels instead of patient-level aggregates.
+    
+    Uses BOTH patient-level labels AND diagnostic keywords to intelligently determine
+    which diseases apply to which specific eye. This handles cases like:
+    - Patient has glaucoma, but only in one eye
+    - One eye is normal while the other has disease
+    - Different diseases in each eye
     
     Args:
         data_path: Path to Excel/CSV file with labels
@@ -126,9 +211,6 @@ def load_labels(data_path: str) -> Tuple[pd.DataFrame, List[str]]:
     else:
         df = pd.read_csv(data_path)
     
-    # Disease columns (7 classes - excluding Hypertension)
-    disease_cols = ['D', 'G', 'C', 'A', 'H', 'M', 'O']
-    
     labels = {}
     excluded_count = 0
     
@@ -137,24 +219,36 @@ def load_labels(data_path: str) -> Tuple[pd.DataFrame, List[str]]:
         left_id = f"{img_id}_left"
         right_id = f"{img_id}_right"
         
-        # Check quality for each eye separately
+        # Get patient-level labels (which diseases the patient has overall)
+        patient_labels = {
+            'A': row['A'],  # AMD
+            'D': row['D'],  # Diabetes
+            'G': row['G'],  # Glaucoma
+            'C': row['C'],  # Cataract
+            'M': row['M'],  # Myopia
+            'N': row['N'],  # Normal
+            'O': row['O']   # Other
+        }
+        
+        # Get diagnostic keywords for each eye
         left_keywords = row['Left-Diagnostic Keywords']
         right_keywords = row['Right-Diagnostic Keywords']
         
-        # Skip low quality images
+        # Intelligent per-eye labeling
         if not is_low_quality(left_keywords):
-            left_label = parse_eye_labels(left_keywords)
+            left_label = parse_intelligent_per_eye_labels(patient_labels, left_keywords, 'left')
             labels[left_id] = left_label
         else:
             excluded_count += 1
             
         if not is_low_quality(right_keywords):
-            right_label = parse_eye_labels(right_keywords)
+            right_label = parse_intelligent_per_eye_labels(patient_labels, right_keywords, 'right')
             labels[right_id] = right_label
         else:
             excluded_count += 1
     
     print(f"  Excluded {excluded_count} low-quality images")
+    print(f"  Using INTELLIGENT PER-EYE labeling (patient labels + diagnostic keywords)")
     return labels
 
 
@@ -343,7 +437,7 @@ def preprocess_phase4c(num_workers: int = 4, chunksize: int = 150):
     print(f"  • val_images.npy: {val_images.shape} ({val_images.nbytes / 1e9:.2f} GB)")
     print(f"  • val_labels.npy: {val_labels.shape}")
     print(f"\nClass distribution (training):")
-    disease_names = ['Normal', 'Diabetes', 'Glaucoma', 'Cataract', 'AMD', 'Myopia', 'Other']
+    disease_names = ['AMD', 'Diabetes', 'Glaucoma', 'Cataract', 'Myopia', 'Normal', 'Other']
     for i, name in enumerate(disease_names):
         count = train_labels[:, i].sum()
         pct = 100 * count / len(train_labels)

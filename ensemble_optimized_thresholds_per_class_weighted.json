@@ -1,0 +1,38 @@
+{
+  "ensemble_method": "per_class_weighted",
+  "models": [
+    "resnet50",
+    "efficientnet_b5",
+    "vit_base"
+  ],
+  "thresholds": {
+    "AMD": 0.5900000000000001,
+    "Diabetes": 0.56,
+    "Glaucoma": 0.5900000000000001,
+    "Cataract": 0.6400000000000001,
+    "Myopia": 0.8100000000000002,
+    "Normal": 0.37000000000000005,
+    "Other": 0.4900000000000001
+  },
+  "baseline_f1": 0.6688080601011962,
+  "optimized_f1": 0.7220375203483346,
+  "improvement": 0.05322946024713837,
+  "baseline_f1_per_class": {
+    "AMD": 0.56,
+    "Diabetes": 0.6492335437330928,
+    "Glaucoma": 0.5560538116591929,
+    "Cataract": 0.714975845410628,
+    "Myopia": 0.8287292817679558,
+    "Normal": 0.7565270188221008,
+    "Other": 0.6161369193154034
+  },
+  "optimized_f1_per_class": {
+    "AMD": 0.62882096069869,
+    "Diabetes": 0.6602129719264279,
+    "Glaucoma": 0.6298342541436464,
+    "Cataract": 0.8439306358381503,
+    "Myopia": 0.8979591836734694,
+    "Normal": 0.7762506871907642,
+    "Other": 0.6172539489671932
+  }
+}
