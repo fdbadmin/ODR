@@ -1,10 +1,13 @@
-# Web Deployment Guide
+# Web Deployment Guide - Phase 4C
 
 ## Overview
 
-This directory contains the web interface for the ODIR-5K Ocular Disease Classifier. The system consists of:
+This directory contains the web interface for the ODIR-5K Ocular Disease Classifier **Phase 4C** (72.26% Macro F1).
+
+The system consists of:
 - **Frontend**: Beautiful HTML/CSS/JavaScript interface (`index.html`)
-- **Backend**: Flask API server (`api.py` in parent directory)
+- **Backend**: Flask API server (`api_ensemble.py` in parent directory)
+- **Models**: 3-model ensemble (ResNet-50 + EfficientNet-B5 + ViT-Base)
 
 ## Deployment Options
 
@@ -29,12 +32,13 @@ For production use with real predictions, you need to deploy both frontend and b
 **A. Local Server (Development)**
 ```bash
 # Install dependencies
-pip install flask flask-cors
+pip install flask flask-cors torch torchvision timm pillow
 
-# Run API server
-python api.py
+# Run API server (loads 3 models ~1.6GB)
+python api_ensemble.py
 
-# API will be available at http://localhost:5000
+# API will be available at http://localhost:5001
+# Note: Port 5000 is used by macOS AirPlay, so we use 5001
 ```
 
 **B. Cloud Deployment (Recommended)**
@@ -42,10 +46,10 @@ python api.py
 **Heroku:**
 1. Create `Procfile`:
    ```
-   web: gunicorn api:app
+   web: gunicorn api_ensemble:app
    ```
 2. Install gunicorn: `pip install gunicorn`
-3. Deploy to Heroku
+3. Deploy to Heroku (Note: Model files ~1.6GB may require larger dyno)
 4. Update `API_URL` in `index.html` to your Heroku URL
 
 **AWS Lambda + API Gateway:**
@@ -96,7 +100,7 @@ const API_URL = 'https://your-api-url.com/predict';
 
 ### Enable CORS
 
-If your frontend and backend are on different domains, CORS is already enabled in `api.py` via:
+If your frontend and backend are on different domains, CORS is already enabled in `api_ensemble.py` via:
 ```python
 from flask_cors import CORS
 CORS(app)
@@ -106,7 +110,7 @@ CORS(app)
 
 ### Terminal 1 - Start Backend:
 ```bash
-python api.py
+python api_ensemble.py  # Loads 3 models (~1.6GB)
 ```
 
 ### Terminal 2 - Start Frontend:
@@ -207,18 +211,20 @@ limiter = Limiter(
 
 ## Cost Optimization
 
-**Model Size:** ~100MB (ResNet50)
-- Consider model compression
-- Use smaller architecture for edge deployment
+**Model Size:** ~1.6GB total (ResNet-50: 270MB, EfficientNet-B5: 326MB, ViT-Base: 985MB)
+- Large model size requires sufficient disk space and memory
+- Consider deploying single best model (EfficientNet-B5: 68.77% F1) for resource constraints
+- Model compression techniques (quantization, pruning) can reduce size
 
 **API Hosting:**
-- Free tier: Heroku, Railway, Render (limited)
-- Pay-per-use: AWS Lambda, Google Cloud Run
-- Budget: $5-20/month for low-medium traffic
+- Free tier: Limited by model size (1.6GB may exceed free tier limits)
+- Recommended: Railway, Render, or AWS EC2 with sufficient storage/RAM
+- Budget: $10-30/month for medium traffic with 1.6GB models
 
 **Alternatives:**
-- TensorFlow.js: Zero hosting costs (GitHub Pages)
-- Edge deployment: Run on user's device
+- Single model deployment: Use only EfficientNet-B5 (326MB) to reduce costs
+- Edge deployment: Not practical with 1.6GB ensemble
+- Quantization: PyTorch quantization can reduce model size by 4x
 
 ## Troubleshooting
 
@@ -228,9 +234,13 @@ limiter = Limiter(
 - Verify backend is running
 
 ### Model Loading Errors
-- Ensure `models/best_model.pth` exists
-- Check PyTorch version compatibility
+- Ensure model files exist:
+  - `models_smart_exclusion/best_resnet50.pth` (270MB)
+  - `models_efficientnet_b5/best_efficientnet_b5.pth` (326MB)
+  - `models_vit_base/best_vit_base.pth` (985MB)
+- Check PyTorch version compatibility (2.0+)
 - Verify device availability (MPS/CUDA/CPU)
+- Ensure sufficient RAM (~4GB for model inference)
 
 ### Image Upload Errors
 - Check file size limits

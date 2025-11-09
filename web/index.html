@@ -299,7 +299,7 @@
         <div class="header">
             <h1>🔬 Ocular Disease Classifier</h1>
             <p>AI-Powered Fundus Image Analysis</p>
-            <p style="font-size: 0.9em; margin-top: 10px;">3-Model Ensemble • 91.51% F1 Score • 96.84% Accuracy • 7 Disease Categories</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">Phase 4C Ensemble • 72.26% Macro F1 • 7 Disease Categories • ResNet-50 + EfficientNet-B5 + ViT-Base</p>
         </div>
 
         <div class="content">
@@ -382,10 +382,11 @@
             <div class="info-box">
                 <h3>ℹ️ About This Classifier</h3>
                 <ul>
-                    <li><strong>Model:</strong> 3-Model Ensemble (ResNet50 + EfficientNet-B3 + DenseNet-121)</li>
-                    <li><strong>Dataset:</strong> ODIR-5K (5,113 training images)</li>
-                    <li><strong>Performance:</strong> 91.51% F1 Score, 96.84% Label Accuracy</li>
-                    <li><strong>Optimization:</strong> Per-class optimal thresholds for maximum accuracy</li>
+                    <li><strong>Model:</strong> 3-Model Ensemble (ResNet-50 + EfficientNet-B5 + ViT-Base)</li>
+                    <li><strong>Architecture:</strong> 2 CNNs + 1 Transformer for maximum diversity</li>
+                    <li><strong>Dataset:</strong> ODIR-5K (4,633 train, 1,750 validation with smart quality filtering)</li>
+                    <li><strong>Performance:</strong> 72.26% Macro F1 Score (validation set)</li>
+                    <li><strong>Optimization:</strong> Per-class optimized thresholds (0.37-0.81 range)</li>
                     <li><strong>Categories:</strong> Normal, Diabetes, Glaucoma, Cataract, AMD, Myopia, Other abnormalities</li>
                     <li><strong>Note:</strong> This is for educational/research purposes only. Not for medical diagnosis.</li>
                 </ul>
@@ -421,8 +422,9 @@
             'Other': { name: 'Other', fullName: 'Other Diseases/Abnormalities', color: '#607D8B' }
         };
 
-        // API endpoint - you'll need to set this up
-        const API_URL = 'http://localhost:5001/predict';  // Change this to your deployed API
+        // API endpoint
+        // Configuration
+const API_URL = 'http://localhost:5001/predict';  // Local development server
 
         // Upload area interactions
         uploadArea.addEventListener('click', () => imageInput.click());
@@ -567,19 +569,20 @@
                 // Simulate API delay
                 await new Promise(resolve => setTimeout(resolve, 2000));
 
-                // Simulated results (7 classes)
+                // Simulated results (7 classes with Phase 4C thresholds)
                 const demoResults = {
                     detected_diseases: [
-                        { name: 'Diabetes', confidence: 0.852, threshold: 0.41 }
+                        { name: 'Diabetes', confidence: 0.687, threshold: 0.560 },
+                        { name: 'Myopia', confidence: 0.891, threshold: 0.810 }
                     ],
                     all_probabilities: {
-                        'Diabetes': 0.852,
-                        'Other': 0.108,
-                        'Cataract': 0.084,
-                        'Myopia': 0.046,
-                        'Normal': 0.023,
-                        'AMD': 0.022,
-                        'Glaucoma': 0.012
+                        'Myopia': 0.891,
+                        'Diabetes': 0.687,
+                        'Cataract': 0.512,
+                        'AMD': 0.423,
+                        'Other': 0.345,
+                        'Glaucoma': 0.234,
+                        'Normal': 0.198
                     }
                 };
 
