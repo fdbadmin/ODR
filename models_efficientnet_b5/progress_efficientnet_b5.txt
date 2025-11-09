@@ -1,0 +1,21 @@
+Training Progress: efficientnet_b5
+============================================================
+
+Epoch: 50/50
+Best Val F1: 0.6495
+Current Val F1: 0.6319
+Train Loss: 0.1726, Train F1: 0.9782
+Val Loss: 0.2027, Val Precision: 0.5728, Val Recall: 0.7123
+
+Per-Class F1 Scores:
+  AMD         : 0.511 🎯
+  Diabetes    : 0.607
+  Glaucoma    : 0.502 🎯
+  Cataract    : 0.774 🎯
+  Myopia      : 0.772 🎯
+  Normal      : 0.718
+  Other       : 0.539
+
+Minority Class Avg F1: 0.640
+
+Timestamp: 2025-11-08 22:27:43

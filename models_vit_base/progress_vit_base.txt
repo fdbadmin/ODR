@@ -1,0 +1,21 @@
+Training Progress: vit_base
+============================================================
+
+Epoch: 40/40
+Best Val F1: 0.6331
+Current Val F1: 0.6209
+Train Loss: 0.1800, Train F1: 0.9320
+Val Loss: 0.1997, Val Precision: 0.5609, Val Recall: 0.7012
+
+Per-Class F1 Scores:
+  AMD         : 0.567 🎯
+  Diabetes    : 0.577
+  Glaucoma    : 0.434 🎯
+  Cataract    : 0.737 🎯
+  Myopia      : 0.759 🎯
+  Normal      : 0.704
+  Other       : 0.569
+
+Minority Class Avg F1: 0.624
+
+Timestamp: 2025-11-09 20:03:16

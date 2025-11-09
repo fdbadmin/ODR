@@ -1,0 +1,21 @@
+Training Progress: resnet50
+============================================================
+
+Epoch: 50/50
+Best Val F1: 0.6321
+Current Val F1: 0.6294
+Train Loss: 0.1739, Train F1: 0.9674
+Val Loss: 0.1869, Val Precision: 0.5760, Val Recall: 0.7045
+
+Per-Class F1 Scores:
+  AMD         : 0.492 🎯
+  Diabetes    : 0.589
+  Glaucoma    : 0.534 🎯
+  Cataract    : 0.676 🎯
+  Myopia      : 0.818 🎯
+  Normal      : 0.732
+  Other       : 0.565
+
+Minority Class Avg F1: 0.630
+
+Timestamp: 2025-11-07 15:04:30
